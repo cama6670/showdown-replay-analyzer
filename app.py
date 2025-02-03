@@ -98,7 +98,7 @@ if st.button("Process These Replays"):
         try:
             df, team_stats = process_replay_csv(username, replay_csv, output_file, team_stats_file)
 
-            if df is None or df.empty:
+            if df is None or isinstance(df, pd.DataFrame) and df.empty:
                 st.error("⚠️ No valid replay data was processed.")
                 print("❌ No valid replay data found in CSV.")
             else:
