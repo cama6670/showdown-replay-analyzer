@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
+import time
 from showdown_scraper import process_replay_csv
 
 st.title("🎮 Pokémon Showdown Replay Analyzer")
@@ -12,17 +13,23 @@ username = st.text_input("Enter Pokémon Showdown Username:", "GTheDon")
 match_format = st.radio("Filter by Format:", ["All", "Reg G", "Reg H"])
 
 def fetch_replays(username):
-    """Fetch all replay URLs from Pokémon Showdown API by paginating results."""
+    """Fetch all replay URLs from Pokémon Showdown API by paginating results safely."""
     base_url = f"https://replay.pokemonshowdown.com/search.json?user={username}"
     all_replays = []
     offset = 0
+    max_retries = 3  # Number of retries if Showdown API fails
+    max_pages = 20   # Hard limit (20 * 50 = 1000 replays max)
 
     while True:
         url = f"{base_url}&offset={offset}"
         response = requests.get(url)
 
         if response.status_code != 200:
-            break  # Stop if there's an error
+            max_retries -= 1
+            if max_retries == 0:
+                break  # Stop if too many failures
+            time.sleep(2)  # Wait before retrying
+            continue
 
         replays = response.json()
         if not replays:
@@ -30,6 +37,9 @@ def fetch_replays(username):
 
         all_replays.extend(replays)
         offset += 50  # Move to the next set of 50 replays
+
+        if offset >= max_pages * 50:  # Stop after max_pages (1000 replays)
+            break
 
     return all_replays
 
