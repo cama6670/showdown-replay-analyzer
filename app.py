@@ -48,7 +48,6 @@ def fetch_replays(username):
 
     return all_replays
 
-
 def filter_replays(replays, match_format):
     """Apply filtering AFTER fetching all replays."""
     if match_format == "All":
@@ -60,6 +59,8 @@ def convert_upload_time(timestamp):
     return datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if isinstance(timestamp, int) else "Unknown Date"
 
 if st.button("Fetch Replays for Username"):
+    print("🔄 Button Clicked: Fetching replays...")  # Debugging log
+
     with st.spinner("Fetching replays..."):
         replays = fetch_replays(username)
         if replays:
@@ -79,18 +80,28 @@ if st.button("Fetch Replays for Username"):
 
             # 📤 Option to Process Downloaded CSV
             if st.button("Process These Replays"):
+                print("🔄 Button Clicked: Processing replays...")  # Debug log
                 output_file = "processed_replays.csv"
                 team_stats_file = "team_statistics.csv"
+
                 with st.spinner("🔄 Processing Replay Data..."):
-                    df, team_stats = process_replay_csv(username, replay_csv, output_file, team_stats_file)
+                    try:
+                        df, team_stats = process_replay_csv(username, replay_csv, output_file, team_stats_file)
 
-                st.subheader("📊 Processed Replay Data")
-                st.dataframe(df)
+                        print(f"✅ Successfully processed {len(df)} replays!")  # Debugging output
+                        print(f"✅ Generated {len(team_stats)} team stats!")
 
-                st.subheader("📈 Team Statistics")
-                st.dataframe(team_stats)
+                        st.subheader("📊 Processed Replay Data")
+                        st.dataframe(df)
 
-                st.download_button("📥 Download Processed Replays", data=df.to_csv(index=False), file_name="processed_replays.csv", mime="text/csv")
-                st.download_button("📥 Download Team Statistics", data=team_stats.to_csv(index=False), file_name="team_statistics.csv", mime="text/csv")
+                        st.subheader("📈 Team Statistics")
+                        st.dataframe(team_stats)
+
+                        st.download_button("📥 Download Processed Replays", data=df.to_csv(index=False), file_name="processed_replays.csv", mime="text/csv")
+                        st.download_button("📥 Download Team Statistics", data=team_stats.to_csv(index=False), file_name="team_statistics.csv")
+
+                    except Exception as e:
+                        print(f"❌ Error Processing Replays: {e}")  # Debug error
+                        st.error("An error occurred while processing replays. Check logs.")
         else:
             st.error("No replays found or an error occurred.")
