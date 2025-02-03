@@ -3,6 +3,12 @@ import json
 from datetime import datetime
 import pandas as pd
 
+def format_upload_time(timestamp):
+    """Convert Unix timestamp to human-readable format."""
+    if isinstance(timestamp, int):
+        return datetime.utcfromtimestamp(timestamp).strftime('%a %b %d %Y %H:%M:%S')
+    return "Unknown Date"
+
 def get_showdown_replay_data(username, replay_url):
     if replay_url.endswith('/'):
         replay_url = replay_url[:-1]
@@ -22,8 +28,8 @@ def get_showdown_replay_data(username, replay_url):
     match_title = f"{match_format}: {' vs. '.join(players)}" if len(players) >= 2 else "Unknown Title"
 
     upload_time = replay_data.get('uploadtime', None)
-    match_date = datetime.utcfromtimestamp(upload_time).strftime('%Y-%m-%d') if isinstance(upload_time, int) else "Unknown Date"
-    
+    match_date = format_upload_time(upload_time)  # Convert timestamp to readable date
+
     # Determine player slot and exact match
     exact_user_match = False
     player_slot = None
@@ -31,12 +37,12 @@ def get_showdown_replay_data(username, replay_url):
         p1_name, p2_name = players[0], players[1]
         if username == p1_name:
             player_slot = 'p1'
-            exact_user_match = username == p1_name  # Case-sensitive match
+            exact_user_match = username == p1_name
         elif username.lower() == p1_name.lower():
             player_slot = 'p1'
         elif username == p2_name:
             player_slot = 'p2'
-            exact_user_match = username == p2_name  # Case-sensitive match
+            exact_user_match = username == p2_name
         elif username.lower() == p2_name.lower():
             player_slot = 'p2'
     
