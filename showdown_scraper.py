@@ -63,20 +63,30 @@ def get_showdown_replay_data(username, replay_url):
     }
 
 def process_replay_csv(username, csv_file, output_file="processed_replays.csv", team_stats_file="team_statistics.csv"):
+    print(f"📂 Loading CSV: {csv_file}")  # Debugging log
     df_input = pd.read_csv(csv_file)
+    
     if 'url' not in df_input.columns:
+        print("❌ CSV file is missing 'url' column!")
         return None
     
     replay_urls = df_input['url'].dropna().tolist()
+    print(f"🔍 Found {len(replay_urls)} replay URLs for processing.")  # Debug log
+
     results = []
     for url in replay_urls:
         data = get_showdown_replay_data(username, url)
         if data:
             results.append(data)
 
+    if not results:
+        print("❌ No replay data could be processed!")
+        return None
+
     df_output = pd.DataFrame(results)
     df_output.to_csv(output_file, index=False)
-    
+    print(f"✅ Processed replay data saved to {output_file}")
+
     # Generate team statistics
     df_output['Match Date'] = pd.to_datetime(df_output['Match Date'], errors='coerce')
     df_output['Last Used'] = df_output.groupby('Team')['Match Date'].transform('max')
@@ -87,4 +97,7 @@ def process_replay_csv(username, csv_file, output_file="processed_replays.csv", 
     ).reset_index()
 
     team_stats.to_csv(team_stats_file, index=False)
+    print(f"✅ Team stats saved to {team_stats_file}")
+
     return df_output, team_stats
+
