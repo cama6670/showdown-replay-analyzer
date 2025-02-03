@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import time
+from datetime import datetime
 from showdown_scraper import process_replay_csv
 
 st.title("🎮 Pokémon Showdown Replay Analyzer")
@@ -16,6 +17,7 @@ def fetch_replays(username):
     """Fetch all replay URLs from Pokémon Showdown API by paginating results safely."""
     base_url = f"https://replay.pokemonshowdown.com/search.json?user={username}"
     all_replays = []
+    seen_ids = set()  # Track unique replay IDs to prevent duplicates
     offset = 0
     max_retries = 3  # Number of retries if Showdown API fails
     max_pages = 20   # Hard limit (20 * 50 = 1000 replays max)
@@ -35,9 +37,13 @@ def fetch_replays(username):
         if not replays:
             break  # Stop if no more replays are returned
 
-        all_replays.extend(replays)
-        offset += 50  # Move to the next set of 50 replays
+        # Remove duplicates by checking the 'id' field
+        for replay in replays:
+            if replay["id"] not in seen_ids:
+                all_replays.append(replay)
+                seen_ids.add(replay["id"])
 
+        offset += 50  # Move to the next set of 50 replays
         if offset >= max_pages * 50:  # Stop after max_pages (1000 replays)
             break
 
@@ -47,7 +53,11 @@ def filter_replays(replays, match_format):
     """Apply filtering AFTER fetching all replays."""
     if match_format == "All":
         return replays
-    return [r for r in replays if match_format.lower().replace(" ", "") in r["format"].lower()]
+    return [r for r in replays if match_format in r["format"]]
+
+def convert_upload_time(timestamp):
+    """Convert Unix timestamp to human-readable format."""
+    return datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if isinstance(timestamp, int) else "Unknown Date"
 
 if st.button("Fetch Replays for Username"):
     with st.spinner("Fetching replays..."):
@@ -56,6 +66,9 @@ if st.button("Fetch Replays for Username"):
             # Apply filtering **after** fetching all replays
             filtered_replays = filter_replays(replays, match_format)
             replay_df = pd.DataFrame(filtered_replays)
+
+            # Convert upload time to readable format
+            replay_df["uploadtime"] = replay_df["uploadtime"].apply(convert_upload_time)
 
             # Save filtered replays to CSV for processing
             replay_csv = "fetched_replays.csv"
