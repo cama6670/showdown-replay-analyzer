@@ -13,6 +13,9 @@ username = st.text_input("Enter Pokémon Showdown Username:", "GTheDon")
 # 🎯 Match Format Filtering
 match_format = st.radio("Filter by Format:", ["All", "Reg G", "Reg H"])
 
+# Variable to store replay file
+replay_csv = "fetched_replays.csv"
+
 def fetch_replays(username):
     """Fetch all replay URLs using the pagination method from PsReplayDownloader."""
     base_url = f"https://replay.pokemonshowdown.com/search.json?user={username}"
@@ -72,36 +75,39 @@ if st.button("Fetch Replays for Username"):
             replay_df["uploadtime"] = replay_df["uploadtime"].apply(convert_upload_time)
 
             # Save filtered replays to CSV for processing
-            replay_csv = "fetched_replays.csv"
             replay_df.to_csv(replay_csv, index=False)
 
             st.subheader(f"🔗 Found {len(filtered_replays)} Replays")
             st.dataframe(replay_df)
-
-            # 📤 Option to Process Downloaded CSV
-            if st.button("Process These Replays"):
-                print("🔄 Button Clicked: Processing replays...")  # Debug log
-                output_file = "processed_replays.csv"
-                team_stats_file = "team_statistics.csv"
-
-                with st.spinner("🔄 Processing Replay Data..."):
-                    try:
-                        df, team_stats = process_replay_csv(username, replay_csv, output_file, team_stats_file)
-
-                        print(f"✅ Successfully processed {len(df)} replays!")  # Debugging output
-                        print(f"✅ Generated {len(team_stats)} team stats!")
-
-                        st.subheader("📊 Processed Replay Data")
-                        st.dataframe(df)
-
-                        st.subheader("📈 Team Statistics")
-                        st.dataframe(team_stats)
-
-                        st.download_button("📥 Download Processed Replays", data=df.to_csv(index=False), file_name="processed_replays.csv", mime="text/csv")
-                        st.download_button("📥 Download Team Statistics", data=team_stats.to_csv(index=False), file_name="team_statistics.csv")
-
-                    except Exception as e:
-                        print(f"❌ Error Processing Replays: {e}")  # Debug error
-                        st.error("An error occurred while processing replays. Check logs.")
         else:
             st.error("No replays found or an error occurred.")
+
+# 🚀 FIX: Move "Process These Replays" Button Outside the Fetch Condition
+if st.button("Process These Replays"):
+    print("🔄 Button Clicked: Processing replays...")  # Debug log
+    output_file = "processed_replays.csv"
+    team_stats_file = "team_statistics.csv"
+
+    with st.spinner("🔄 Processing Replay Data..."):
+        try:
+            df, team_stats = process_replay_csv(username, replay_csv, output_file, team_stats_file)
+
+            if df is None or df.empty:
+                st.error("⚠️ No valid replay data was processed.")
+                print("❌ No valid replay data found in CSV.")
+            else:
+                print(f"✅ Successfully processed {len(df)} replays!")  # Debugging output
+                print(f"✅ Generated {len(team_stats)} team stats!")
+
+                st.subheader("📊 Processed Replay Data")
+                st.dataframe(df)
+
+                st.subheader("📈 Team Statistics")
+                st.dataframe(team_stats)
+
+                st.download_button("📥 Download Processed Replays", data=df.to_csv(index=False), file_name="processed_replays.csv", mime="text/csv")
+                st.download_button("📥 Download Team Statistics", data=team_stats.to_csv(index=False), file_name="team_statistics.csv")
+
+        except Exception as e:
+            print(f"❌ Error Processing Replays: {e}")  # Debug error
+            st.error(f"An error occurred while processing replays: {e}")
