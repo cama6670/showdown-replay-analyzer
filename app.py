@@ -29,11 +29,14 @@ def fetch_replays(username):
         if response.status_code != 200:
             max_retries -= 1
             if max_retries == 0:
+                print(f"❌ API Error: Failed to fetch data after retries.")
                 break  # Stop if too many failures
             time.sleep(2)  # Wait before retrying
             continue
 
         replays = response.json()
+        print(f"✅ Fetched {len(replays)} replays at offset {offset}")  # Debugging log
+
         if not replays:
             break  # Stop if no more replays are returned
 
@@ -43,15 +46,19 @@ def fetch_replays(username):
                 all_replays.append(replay)
                 seen_ids.add(replay["id"])
 
-        offset += 50  # Move to the next set of 50 replays
-
         if len(replays) < 50:  # If fewer than 50 replays are returned, we're at the last page
+            print(f"✅ Pagination Complete: Fetched {len(all_replays)} total replays.")
             break
 
+        offset += 50  # Move to the next set of 50 replays
+
         if offset >= max_pages * 50:  # Stop after max_pages (2500 replays max)
+            print(f"⚠️ Stopping due to max page limit: {len(all_replays)} total replays fetched.")
             break
 
     return all_replays
+
+
 
 
 def filter_replays(replays, match_format):
