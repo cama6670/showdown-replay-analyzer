@@ -7,8 +7,8 @@ from showdown_scraper import process_replay_csv
 
 st.title("🎮 Pokémon Showdown Replay Analyzer")
 
-# User Input for Username
-username = st.text_input("Enter Pokémon Showdown Username:", "GTheDon")
+# User Input for Username (Empty with Placeholder "Wolfe Glick")
+username = st.text_input("Enter Pokémon Showdown Username:", placeholder="Wolfe Glick")
 
 # 🎯 Match Format Filtering
 match_format = st.radio("Filter by Format:", ["All", "Reg G", "Reg H"])
@@ -64,29 +64,32 @@ def convert_upload_time(timestamp):
 if st.button("Fetch Replays for Username"):
     print("🔄 Button Clicked: Fetching replays...")  # Debugging log
 
-    with st.spinner("Fetching replays..."):
-        replays = fetch_replays(username)
-        if replays:
-            # Apply filtering **after** fetching all replays
-            filtered_replays = filter_replays(replays, match_format)
-            replay_df = pd.DataFrame(filtered_replays)
+    if not username.strip():
+        st.error("⚠️ Please enter a Pokémon Showdown username.")
+    else:
+        with st.spinner("Fetching replays..."):
+            replays = fetch_replays(username)
+            if replays:
+                # Apply filtering **after** fetching all replays
+                filtered_replays = filter_replays(replays, match_format)
+                replay_df = pd.DataFrame(filtered_replays)
 
-            # Convert upload time to readable format
-            replay_df["uploadtime"] = replay_df["uploadtime"].apply(convert_upload_time)
+                # Convert upload time to readable format
+                replay_df["uploadtime"] = replay_df["uploadtime"].apply(convert_upload_time)
 
-            # ✅ FIX: Construct Replay URLs
-            replay_df["replay_url"] = "https://replay.pokemonshowdown.com/" + replay_df["id"]
+                # ✅ FIX: Construct Replay URLs
+                replay_df["replay_url"] = "https://replay.pokemonshowdown.com/" + replay_df["id"]
 
-            # ✅ Only keep relevant columns
-            replay_df = replay_df[["replay_url", "id", "format", "players", "uploadtime", "rating"]]
+                # ✅ Only keep relevant columns
+                replay_df = replay_df[["replay_url", "id", "format", "players", "uploadtime", "rating"]]
 
-            # Save filtered replays to CSV for processing
-            replay_df.to_csv("fetched_replays.csv", index=False)
+                # Save filtered replays to CSV for processing
+                replay_df.to_csv("fetched_replays.csv", index=False)
 
-            st.subheader(f"🔗 Found {len(filtered_replays)} Replays")
-            st.dataframe(replay_df)
-        else:
-            st.error("No replays found or an error occurred.")
+                st.subheader(f"🔗 Found {len(filtered_replays)} Replays")
+                st.dataframe(replay_df)
+            else:
+                st.error("No replays found or an error occurred.")
 
 # 🚀 FIX: Move "Process These Replays" Button Outside the Fetch Condition
 if st.button("Process These Replays"):
