@@ -12,15 +12,29 @@ username = st.text_input("Enter Pokémon Showdown Username:", "GTheDon")
 match_format = st.radio("Filter by Format:", ["All", "Reg G", "Reg H"])
 
 def fetch_replays(username):
-    """Fetch replay URLs from Pokémon Showdown API"""
-    url = f"https://replay.pokemonshowdown.com/search.json?user={username}"
-    response = requests.get(url)
-    if response.status_code == 200:
-        return response.json()
-    return None
+    """Fetch all replay URLs from Pokémon Showdown API by paginating results."""
+    base_url = f"https://replay.pokemonshowdown.com/search.json?user={username}"
+    all_replays = []
+    offset = 0
+
+    while True:
+        url = f"{base_url}&offset={offset}"
+        response = requests.get(url)
+
+        if response.status_code != 200:
+            break  # Stop if there's an error
+
+        replays = response.json()
+        if not replays:
+            break  # Stop if no more replays are returned
+
+        all_replays.extend(replays)
+        offset += 50  # Move to the next set of 50 replays
+
+    return all_replays
 
 def filter_replays(replays, match_format):
-    """Filter replays by Reg G, Reg H, or All"""
+    """Apply filtering AFTER fetching all replays."""
     if match_format == "All":
         return replays
     return [r for r in replays if match_format.lower().replace(" ", "") in r["format"].lower()]
@@ -29,10 +43,11 @@ if st.button("Fetch Replays for Username"):
     with st.spinner("Fetching replays..."):
         replays = fetch_replays(username)
         if replays:
+            # Apply filtering **after** fetching all replays
             filtered_replays = filter_replays(replays, match_format)
             replay_df = pd.DataFrame(filtered_replays)
 
-            # Save to CSV for processing
+            # Save filtered replays to CSV for processing
             replay_csv = "fetched_replays.csv"
             replay_df.to_csv(replay_csv, index=False)
 
