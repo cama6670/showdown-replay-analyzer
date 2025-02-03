@@ -1,7 +1,7 @@
 ﻿import streamlit as st
 import pandas as pd
 import os
-from showdown_replay_scraper import process_replay_csv
+from showdown_scraper import process_replay_csv
 
 st.title("🎮 Pokémon Showdown Replay Analyzer")
 
