@@ -30,7 +30,6 @@ def get_showdown_replay_data(username, replay_url):
     upload_time = replay_data.get('uploadtime', None)
     match_date = format_upload_time(upload_time)  # Convert timestamp to readable date
 
-    # Determine player slot and exact match
     exact_user_match = "Yes" if username in players else "No"
 
     return {
@@ -47,7 +46,7 @@ def process_replay_csv(username, csv_file, output_file="processed_replays.csv", 
 
     if "replay_url" not in df_input.columns:
         print("❌ CSV file is missing 'replay_url' column!")
-        return None, None
+        return pd.DataFrame(), pd.DataFrame()
 
     replay_urls = df_input["replay_url"].dropna().tolist()
     print(f"🔍 Found {len(replay_urls)} replay URLs for processing.")  # Debug log
@@ -56,10 +55,10 @@ def process_replay_csv(username, csv_file, output_file="processed_replays.csv", 
 
     if not results:
         print("❌ No valid replay data found!")
-        return None, None
+        return pd.DataFrame(), pd.DataFrame()
 
     df_output = pd.DataFrame(results)
     df_output.to_csv(output_file, index=False)
     print(f"✅ Processed replay data saved to {output_file}")
 
-    return df_output, None  # Team stats removed for simplicity
+    return df_output, pd.DataFrame()  # Empty team stats for now
