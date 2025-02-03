@@ -14,13 +14,13 @@ username = st.text_input("Enter Pokémon Showdown Username:", "GTheDon")
 match_format = st.radio("Filter by Format:", ["All", "Reg G", "Reg H"])
 
 def fetch_replays(username):
-    """Fetch all replay URLs from Pokémon Showdown API by paginating results safely."""
+    """Fetch all replay URLs from Pokémon Showdown API using proper pagination."""
     base_url = f"https://replay.pokemonshowdown.com/search.json?user={username}"
     all_replays = []
-    seen_ids = set()  # Track unique replay IDs to prevent duplicates
+    seen_ids = set()  # Track unique replay IDs
     offset = 0
     max_retries = 3  # Number of retries if Showdown API fails
-    max_pages = 20   # Hard limit (20 * 50 = 1000 replays max)
+    max_pages = 50   # Hard limit (50 * 50 = 2500 replays max)
 
     while True:
         url = f"{base_url}&offset={offset}"
@@ -44,10 +44,15 @@ def fetch_replays(username):
                 seen_ids.add(replay["id"])
 
         offset += 50  # Move to the next set of 50 replays
-        if offset >= max_pages * 50:  # Stop after max_pages (1000 replays)
+
+        if len(replays) < 50:  # If fewer than 50 replays are returned, we're at the last page
+            break
+
+        if offset >= max_pages * 50:  # Stop after max_pages (2500 replays max)
             break
 
     return all_replays
+
 
 def filter_replays(replays, match_format):
     """Apply filtering AFTER fetching all replays."""
