@@ -14,51 +14,39 @@ username = st.text_input("Enter Pokémon Showdown Username:", "GTheDon")
 match_format = st.radio("Filter by Format:", ["All", "Reg G", "Reg H"])
 
 def fetch_replays(username):
-    """Fetch all replay URLs from Pokémon Showdown API using proper pagination."""
+    """Fetch all replay URLs using the pagination method from PsReplayDownloader."""
     base_url = f"https://replay.pokemonshowdown.com/search.json?user={username}"
     all_replays = []
     seen_ids = set()  # Track unique replay IDs
-    offset = 0
-    max_retries = 3  # Number of retries if Showdown API fails
-    max_pages = 50   # Hard limit (50 * 50 = 2500 replays max)
+    page = 1  # Start from page 1
 
     while True:
-        url = f"{base_url}&offset={offset}"
+        url = f"{base_url}&page={page}"
         response = requests.get(url)
 
         if response.status_code != 200:
-            max_retries -= 1
-            if max_retries == 0:
-                print(f"❌ API Error: Failed to fetch data after retries.")
-                break  # Stop if too many failures
-            time.sleep(2)  # Wait before retrying
-            continue
+            print(f"❌ API Error: Failed to fetch data on page {page}.")
+            break  # Stop if an error occurs
 
         replays = response.json()
-        print(f"✅ Fetched {len(replays)} replays at offset {offset}")  # Debugging log
+        print(f"✅ Fetched {len(replays)} replays from page {page}")
 
         if not replays:
             break  # Stop if no more replays are returned
 
         # Remove duplicates by checking the 'id' field
-        for replay in replays:
+        for replay in replays[:-1]:  # Ignore the last item to prevent duplication
             if replay["id"] not in seen_ids:
                 all_replays.append(replay)
                 seen_ids.add(replay["id"])
 
-        if len(replays) < 50:  # If fewer than 50 replays are returned, we're at the last page
+        if len(replays) < 51:  # If fewer than 51 results, stop (last page reached)
             print(f"✅ Pagination Complete: Fetched {len(all_replays)} total replays.")
             break
 
-        offset += 50  # Move to the next set of 50 replays
-
-        if offset >= max_pages * 50:  # Stop after max_pages (2500 replays max)
-            print(f"⚠️ Stopping due to max page limit: {len(all_replays)} total replays fetched.")
-            break
+        page += 1  # Move to the next page
 
     return all_replays
-
-
 
 
 def filter_replays(replays, match_format):
