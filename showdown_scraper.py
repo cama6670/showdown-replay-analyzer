@@ -6,7 +6,7 @@ import pandas as pd
 def format_upload_time(timestamp):
     """Convert Unix timestamp to human-readable format."""
     if isinstance(timestamp, int):
-        return datetime.utcfromtimestamp(timestamp).strftime('%a %b %d %Y %H:%M:%S')
+        return datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
     return "Unknown Date"
 
 def get_showdown_replay_data(username, replay_url):
@@ -37,12 +37,12 @@ def get_showdown_replay_data(username, replay_url):
         p1_name, p2_name = players[0], players[1]
         if username == p1_name:
             player_slot = 'p1'
-            exact_user_match = username == p1_name
+            exact_user_match = True
         elif username.lower() == p1_name.lower():
             player_slot = 'p1'
         elif username == p2_name:
             player_slot = 'p2'
-            exact_user_match = username == p2_name
+            exact_user_match = True
         elif username.lower() == p2_name.lower():
             player_slot = 'p2'
     
@@ -64,13 +64,22 @@ def get_showdown_replay_data(username, replay_url):
 
 def process_replay_csv(username, csv_file, output_file="processed_replays.csv", team_stats_file="team_statistics.csv"):
     print(f"📂 Loading CSV: {csv_file}")  # Debugging log
-    df_input = pd.read_csv(csv_file)
-    
-    if 'url' not in df_input.columns:
-        print("❌ CSV file is missing 'url' column!")
-        return None
-    
-    replay_urls = df_input['url'].dropna().tolist()
+
+    try:
+        df_input = pd.read_csv(csv_file)
+    except Exception as e:
+        print(f"❌ Error reading CSV file: {e}")
+        return None, None
+
+    # ✅ FIX: Handle cases where column name might be "replay_url" instead of "url"
+    if "url" in df_input.columns:
+        replay_urls = df_input["url"].dropna().tolist()
+    elif "replay_url" in df_input.columns:
+        replay_urls = df_input["replay_url"].dropna().tolist()
+    else:
+        print("❌ CSV file is missing both 'url' and 'replay_url' columns!")
+        return None, None
+
     print(f"🔍 Found {len(replay_urls)} replay URLs for processing.")  # Debug log
 
     results = []
@@ -80,8 +89,8 @@ def process_replay_csv(username, csv_file, output_file="processed_replays.csv", 
             results.append(data)
 
     if not results:
-        print("❌ No replay data could be processed!")
-        return None
+        print("❌ No valid replay data found!")
+        return None, None
 
     df_output = pd.DataFrame(results)
     df_output.to_csv(output_file, index=False)
@@ -100,4 +109,3 @@ def process_replay_csv(username, csv_file, output_file="processed_replays.csv", 
     print(f"✅ Team stats saved to {team_stats_file}")
 
     return df_output, team_stats
-
