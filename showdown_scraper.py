@@ -31,62 +31,28 @@ def get_showdown_replay_data(username, replay_url):
     match_date = format_upload_time(upload_time)  # Convert timestamp to readable date
 
     # Determine player slot and exact match
-    exact_user_match = False
-    player_slot = None
-    if len(players) >= 2:
-        p1_name, p2_name = players[0], players[1]
-        if username == p1_name:
-            player_slot = 'p1'
-            exact_user_match = True
-        elif username.lower() == p1_name.lower():
-            player_slot = 'p1'
-        elif username == p2_name:
-            player_slot = 'p2'
-            exact_user_match = True
-        elif username.lower() == p2_name.lower():
-            player_slot = 'p2'
-    
-    # Extract Pokémon team
-    team = set()
-    if player_slot:
-        for line in replay_data.get('log', '').split('\n'):
-            if f"|poke|{player_slot}|" in line:
-                pokemon_name = line.split('|')[3].split(',')[0]
-                team.add(pokemon_name)
-    
+    exact_user_match = "Yes" if username in players else "No"
+
     return {
         'Match Title': match_title,
         'Match Date': match_date,
-        'Team': ', '.join(team),
         'Replay URL': replay_url,
-        'Exact User Name Match': "Yes" if exact_user_match else "No"
+        'Exact User Name Match': exact_user_match
     }
 
 def process_replay_csv(username, csv_file, output_file="processed_replays.csv", team_stats_file="team_statistics.csv"):
     print(f"📂 Loading CSV: {csv_file}")  # Debugging log
 
-    try:
-        df_input = pd.read_csv(csv_file)
-    except Exception as e:
-        print(f"❌ Error reading CSV file: {e}")
+    df_input = pd.read_csv(csv_file)
+
+    if "replay_url" not in df_input.columns:
+        print("❌ CSV file is missing 'replay_url' column!")
         return None, None
 
-    # ✅ FIX: Handle cases where column name might be "replay_url" instead of "url"
-    if "url" in df_input.columns:
-        replay_urls = df_input["url"].dropna().tolist()
-    elif "replay_url" in df_input.columns:
-        replay_urls = df_input["replay_url"].dropna().tolist()
-    else:
-        print("❌ CSV file is missing both 'url' and 'replay_url' columns!")
-        return None, None
-
+    replay_urls = df_input["replay_url"].dropna().tolist()
     print(f"🔍 Found {len(replay_urls)} replay URLs for processing.")  # Debug log
 
-    results = []
-    for url in replay_urls:
-        data = get_showdown_replay_data(username, url)
-        if data:
-            results.append(data)
+    results = [get_showdown_replay_data(username, url) for url in replay_urls if get_showdown_replay_data(username, url)]
 
     if not results:
         print("❌ No valid replay data found!")
@@ -96,16 +62,4 @@ def process_replay_csv(username, csv_file, output_file="processed_replays.csv", 
     df_output.to_csv(output_file, index=False)
     print(f"✅ Processed replay data saved to {output_file}")
 
-    # Generate team statistics
-    df_output['Match Date'] = pd.to_datetime(df_output['Match Date'], errors='coerce')
-    df_output['Last Used'] = df_output.groupby('Team')['Match Date'].transform('max')
-
-    team_stats = df_output.groupby(['Team', 'Exact User Name Match']).agg(
-        Count=('Match Title', 'count'),
-        Last_Used=('Last Used', 'max')
-    ).reset_index()
-
-    team_stats.to_csv(team_stats_file, index=False)
-    print(f"✅ Team stats saved to {team_stats_file}")
-
-    return df_output, team_stats
+    return df_output, None  # Team stats removed for simplicity
