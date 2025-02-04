@@ -2,7 +2,6 @@ import requests
 import json
 from datetime import datetime
 import pandas as pd
-import hashlib
 
 def format_upload_time(timestamp):
     """Convert Unix timestamp to MM-DD-YYYY format."""
@@ -10,18 +9,20 @@ def format_upload_time(timestamp):
         return datetime.utcfromtimestamp(timestamp).strftime('%m-%d-%Y')
     return "Unknown Date"
 
-def generate_team_id(team):
-    """Generate a unique ID based on the sorted Pokémon names."""
+def generate_team_id(team, existing_teams):
+    """Assign a simple numerical ID for unique teams."""
     if not team:
         return "Unknown_Team"
     
-    sorted_team = sorted(team)
-    team_str = ",".join(sorted_team)
-    
-    # Use a hash function to create a consistent unique ID
-    return hashlib.md5(team_str.encode()).hexdigest()[:8]  # Shortened to 8 characters
+    sorted_team = ",".join(sorted(team))  # Normalize order
+    if sorted_team in existing_teams:
+        return existing_teams[sorted_team]  # Use existing ID
+    else:
+        new_id = len(existing_teams) + 1  # Assign next available number
+        existing_teams[sorted_team] = new_id
+        return new_id
 
-def get_showdown_replay_data(username, replay_url):
+def get_showdown_replay_data(username, replay_url, existing_teams):
     """Fetch replay data and extract match details."""
     if replay_url.endswith('/'):
         replay_url = replay_url[:-1]
@@ -67,7 +68,7 @@ def get_showdown_replay_data(username, replay_url):
                 pokemon_name = line.split('|')[3].split(',')[0]
                 team.add(pokemon_name)
 
-    team_id = generate_team_id(team)  # Generate unique ID for the team
+    team_id = generate_team_id(team, existing_teams)  # Assign simple numerical ID
 
     return {
         'Match Title': match_title,
@@ -75,7 +76,7 @@ def get_showdown_replay_data(username, replay_url):
         'Replay URL': replay_url,
         'Exact User Name Match': "Yes" if exact_user_match else "No",
         'Team': ', '.join(team) if team else "Unknown",
-        'Team ID': team_id  # Add unique Team ID column
+        'Team ID': team_id  # Add simple numerical Team ID column
     }
 
 def process_replay_csv(username, csv_file, output_file="processed_replays.csv", team_stats_file="team_statistics.csv"):
@@ -91,9 +92,10 @@ def process_replay_csv(username, csv_file, output_file="processed_replays.csv", 
     replay_urls = df_input["replay_url"].dropna().tolist()
     print(f"🔍 Found {len(replay_urls)} replay URLs for processing.")  # Debug log
 
+    existing_teams = {}  # Dictionary to store team IDs
     results = []
     for url in replay_urls:
-        data = get_showdown_replay_data(username, url)
+        data = get_showdown_replay_data(username, url, existing_teams)
         if data:
             results.append(data)
 
