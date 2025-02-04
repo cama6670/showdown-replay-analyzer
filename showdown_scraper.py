@@ -2,12 +2,24 @@ import requests
 import json
 from datetime import datetime
 import pandas as pd
+import hashlib
 
 def format_upload_time(timestamp):
-    """Convert Unix timestamp to human-readable format."""
+    """Convert Unix timestamp to MM-DD-YYYY format."""
     if isinstance(timestamp, int):
-        return datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+        return datetime.utcfromtimestamp(timestamp).strftime('%m-%d-%Y')
     return "Unknown Date"
+
+def generate_team_id(team):
+    """Generate a unique ID based on the sorted Pokémon names."""
+    if not team:
+        return "Unknown_Team"
+    
+    sorted_team = sorted(team)
+    team_str = ",".join(sorted_team)
+    
+    # Use a hash function to create a consistent unique ID
+    return hashlib.md5(team_str.encode()).hexdigest()[:8]  # Shortened to 8 characters
 
 def get_showdown_replay_data(username, replay_url):
     """Fetch replay data and extract match details."""
@@ -29,7 +41,7 @@ def get_showdown_replay_data(username, replay_url):
     match_title = f"{match_format}: {' vs. '.join(players)}" if len(players) >= 2 else "Unknown Title"
 
     upload_time = replay_data.get('uploadtime', None)
-    match_date = format_upload_time(upload_time)  # Convert timestamp to readable date
+    match_date = format_upload_time(upload_time)  # Convert timestamp to MM-DD-YYYY
 
     # Determine player slot and exact match
     exact_user_match = False
@@ -55,12 +67,15 @@ def get_showdown_replay_data(username, replay_url):
                 pokemon_name = line.split('|')[3].split(',')[0]
                 team.add(pokemon_name)
 
+    team_id = generate_team_id(team)  # Generate unique ID for the team
+
     return {
         'Match Title': match_title,
-        'Match Date': match_date,
+        'Match Date': match_date,  # Only keep the formatted date
         'Replay URL': replay_url,
         'Exact User Name Match': "Yes" if exact_user_match else "No",
-        'Team': ', '.join(team) if team else "Unknown"
+        'Team': ', '.join(team) if team else "Unknown",
+        'Team ID': team_id  # Add unique Team ID column
     }
 
 def process_replay_csv(username, csv_file, output_file="processed_replays.csv", team_stats_file="team_statistics.csv"):
@@ -90,11 +105,11 @@ def process_replay_csv(username, csv_file, output_file="processed_replays.csv", 
     df_output.to_csv(output_file, index=False)
     print(f"✅ Processed replay data saved to {output_file}")
 
-    # Generate team statistics
-    df_output['Match Date'] = pd.to_datetime(df_output['Match Date'], errors='coerce')
-    df_output['Last Used'] = df_output.groupby('Team')['Match Date'].transform('max')
+    # Generate team statistics based on unique Team ID
+    df_output['Match Date'] = pd.to_datetime(df_output['Match Date'], format="%m-%d-%Y", errors='coerce')
+    df_output['Last Used'] = df_output.groupby('Team ID')['Match Date'].transform('max')
 
-    team_stats = df_output.groupby(['Team', 'Exact User Name Match']).agg(
+    team_stats = df_output.groupby(['Team ID', 'Team', 'Exact User Name Match']).agg(
         Count=('Match Title', 'count'),
         Last_Used=('Last Used', 'max')
     ).reset_index()
