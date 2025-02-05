@@ -13,11 +13,14 @@ username = st.text_input("Enter Pokémon Showdown Username:", placeholder="Wolfe
 # 🎯 Match Format Filtering
 match_format = st.radio("Filter by Format:", ["All", "Reg G", "Reg H"])
 
+# 🚀 Selection: Fetch Public Replays OR Upload CSV
+source_option = st.radio("Select Replay Source:", ["Fetch from Showdown", "Upload CSV with Replay Links"])
+
 # Variable to store replay file
 replay_csv = "fetched_replays.csv"
 
 def fetch_replays(username):
-    """Fetch all replay URLs using the pagination method from PsReplayDownloader."""
+    """Fetch all replay URLs using the pagination method from Showdown API."""
     base_url = f"https://replay.pokemonshowdown.com/search.json?user={username}"
     all_replays = []
     seen_ids = set()  # Track unique replay IDs
@@ -59,39 +62,50 @@ def filter_replays(replays, match_format):
 
 def convert_upload_time(timestamp):
     """Convert Unix timestamp to human-readable format."""
-    return datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if isinstance(timestamp, int) else "Unknown Date"
+    return datetime.utcfromtimestamp(timestamp).strftime('%m-%d-%Y') if isinstance(timestamp, int) else "Unknown Date"
 
-if st.button("Fetch Replays for Username"):
-    print("🔄 Button Clicked: Fetching replays...")  # Debugging log
+if source_option == "Fetch from Showdown":
+    if st.button("Fetch Replays for Username"):
+        print("🔄 Button Clicked: Fetching replays...")  # Debugging log
 
-    if not username.strip():
-        st.error("⚠️ Please enter a Pokémon Showdown username.")
-    else:
-        with st.spinner("Fetching replays..."):
-            replays = fetch_replays(username)
-            if replays:
-                # Apply filtering **after** fetching all replays
-                filtered_replays = filter_replays(replays, match_format)
-                replay_df = pd.DataFrame(filtered_replays)
+        if not username.strip():
+            st.error("⚠️ Please enter a Pokémon Showdown username.")
+        else:
+            with st.spinner("Fetching replays..."):
+                replays = fetch_replays(username)
+                if replays:
+                    # Apply filtering **after** fetching all replays
+                    filtered_replays = filter_replays(replays, match_format)
+                    replay_df = pd.DataFrame(filtered_replays)
 
-                # Convert upload time to readable format
-                replay_df["uploadtime"] = replay_df["uploadtime"].apply(convert_upload_time)
+                    # Convert upload time to readable format
+                    replay_df["uploadtime"] = replay_df["uploadtime"].apply(convert_upload_time)
 
-                # ✅ FIX: Construct Replay URLs
-                replay_df["replay_url"] = "https://replay.pokemonshowdown.com/" + replay_df["id"]
+                    # ✅ FIX: Construct Replay URLs
+                    replay_df["replay_url"] = "https://replay.pokemonshowdown.com/" + replay_df["id"]
 
-                # ✅ Only keep relevant columns
-                replay_df = replay_df[["replay_url", "id", "format", "players", "uploadtime", "rating"]]
+                    # ✅ Only keep relevant columns
+                    replay_df = replay_df[["replay_url", "id", "format", "players", "uploadtime", "rating"]]
 
-                # Save filtered replays to CSV for processing
-                replay_df.to_csv("fetched_replays.csv", index=False)
+                    # Save filtered replays to CSV for processing
+                    replay_df.to_csv(replay_csv, index=False)
 
-                st.subheader(f"🔗 Found {len(filtered_replays)} Replays")
-                st.dataframe(replay_df)
-            else:
-                st.error("No replays found or an error occurred.")
+                    st.subheader(f"🔗 Found {len(filtered_replays)} Replays")
+                    st.dataframe(replay_df)
+                else:
+                    st.error("No replays found or an error occurred.")
 
-# 🚀 FIX: Move "Process These Replays" Button Outside the Fetch Condition
+elif source_option == "Upload CSV with Replay Links":
+    uploaded_file = st.file_uploader("Upload a CSV file containing replay links", type=["csv"])
+
+    if uploaded_file is not None:
+        replay_csv = "uploaded_replays.csv"
+        with open(replay_csv, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        
+        st.success(f"✅ Uploaded {uploaded_file.name}. Ready to process.")
+
+# 🚀 Process Replays Button
 if st.button("Process These Replays"):
     print("🔄 Button Clicked: Processing replays...")  # Debug log
     output_file = "processed_replays.csv"
