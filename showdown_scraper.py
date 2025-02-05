@@ -13,7 +13,7 @@ def generate_team_id(team, existing_teams):
     """Assign a simple numerical ID for unique teams."""
     if not team:
         return "Unknown_Team"
-    
+
     sorted_team = ",".join(sorted(team))  # Normalize order
     if sorted_team in existing_teams:
         return existing_teams[sorted_team]  # Use existing ID
@@ -23,29 +23,17 @@ def generate_team_id(team, existing_teams):
         return new_id
 
 def get_showdown_replay_data(username, replay_url, existing_teams):
-    """Fetch replay data and extract match details while handling different URL formats."""
-    if replay_url.endswith('/'):
-        replay_url = replay_url[:-1]
+    """Fetch replay data and extract match details."""
+    json_url = replay_url + ".json"
 
-    base_id = replay_url.split('/')[-1].split('-')[0]  # Extract base numeric ID
+    response = requests.get(json_url)
+    if response.status_code != 200:
+        return None
 
-    json_urls = [
-        f"https://replay.pokemonshowdown.com/{base_id}.json",  # Short ID format
-        f"{replay_url}.json"  # Full ID format (including random string)
-    ]
-
-    replay_data = None
-    for json_url in json_urls:
-        response = requests.get(json_url)
-        if response.status_code == 200:
-            try:
-                replay_data = response.json()
-                break  # Stop searching if we find a valid replay
-            except json.JSONDecodeError:
-                continue  # Try the next format
-
-    if not replay_data:
-        return None  # No valid replay found
+    try:
+        replay_data = response.json()
+    except json.JSONDecodeError:
+        return None
 
     match_format = replay_data.get('format', 'Unknown Format')
     players = replay_data.get("players", [])
