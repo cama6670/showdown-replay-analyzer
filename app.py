@@ -1,136 +1,138 @@
-import streamlit as st
-import pandas as pd
 import requests
-import time
+import json
 from datetime import datetime
-from showdown_scraper import process_replay_csv
+import pandas as pd
 
-st.title("🎮 Pokémon Showdown Replay Analyzer")
+def format_upload_time(timestamp):
+    """Convert Unix timestamp to MM-DD-YYYY format."""
+    if isinstance(timestamp, int):
+        return datetime.utcfromtimestamp(timestamp).strftime('%m-%d-%Y')
+    return "Unknown Date"
 
-# User Input for Username (Empty with Placeholder "Wolfe Glick")
-username = st.text_input("Enter Pokémon Showdown Username:", placeholder="Wolfe Glick")
+def generate_team_id(team, existing_teams):
+    """Assign a simple numerical ID for unique teams."""
+    if not team:
+        return "Unknown_Team"
+    
+    sorted_team = ",".join(sorted(team))  # Normalize order
+    if sorted_team in existing_teams:
+        return existing_teams[sorted_team]  # Use existing ID
+    else:
+        new_id = len(existing_teams) + 1  # Assign next available number
+        existing_teams[sorted_team] = new_id
+        return new_id
 
-# 🎯 Match Format Filtering
-match_format = st.radio("Filter by Format:", ["All", "Reg G", "Reg H"])
+def get_showdown_replay_data(username, replay_url, existing_teams):
+    """Fetch replay data and extract match details while ensuring all Bo3 matches are included."""
+    if replay_url.endswith('/'):
+        replay_url = replay_url[:-1]
 
-# 🚀 Selection: Fetch Public Replays OR Upload CSV
-source_option = st.radio("Select Replay Source:", ["Fetch from Showdown", "Upload CSV with Replay Links"])
+    base_id = replay_url.split('/')[-1].split('-')[0]  # Extract base numeric ID
 
-# Variable to store replay file
-replay_csv = "fetched_replays.csv"
+    json_urls = [
+        f"https://replay.pokemonshowdown.com/{base_id}.json",  # Short ID format
+        f"{replay_url}.json"  # Full ID format (including random string)
+    ]
 
-def fetch_replays(username):
-    """Fetch all replay URLs using the pagination method from Showdown API."""
-    base_url = f"https://replay.pokemonshowdown.com/search.json?user={username}"
-    all_replays = []
-    seen_ids = set()  # Track unique replay IDs
-    page = 1  # Start from page 1
+    replay_data = None
+    for json_url in json_urls:
+        response = requests.get(json_url)
+        if response.status_code == 200:
+            try:
+                replay_data = response.json()
+                break  # Stop searching if we find a valid replay
+            except json.JSONDecodeError:
+                continue  # Try the next format
 
-    while True:
-        url = f"{base_url}&page={page}"
-        response = requests.get(url)
+    if not replay_data:
+        return None  # No valid replay found
 
-        if response.status_code != 200:
-            print(f"❌ API Error: Failed to fetch data on page {page}.")
-            break  # Stop if an error occurs
+    match_format = replay_data.get('format', 'Unknown Format')
+    players = replay_data.get("players", [])
+    match_title = f"{match_format}: {' vs. '.join(players)}" if len(players) >= 2 else "Unknown Title"
 
-        replays = response.json()
-        print(f"✅ Fetched {len(replays)} replays from page {page}")
+    upload_time = replay_data.get('uploadtime', None)
+    match_date = format_upload_time(upload_time)  # Convert timestamp to MM-DD-YYYY
 
-        if not replays:
-            break  # Stop if no more replays are returned
+    # Determine player slot and exact match
+    exact_user_match = False
+    player_slot = None
+    if len(players) >= 2:
+        p1_name, p2_name = players[0], players[1]
+        if username == p1_name:
+            player_slot = 'p1'
+            exact_user_match = True
+        elif username.lower() == p1_name.lower():
+            player_slot = 'p1'
+        elif username == p2_name:
+            player_slot = 'p2'
+            exact_user_match = True
+        elif username.lower() == p2_name.lower():
+            player_slot = 'p2'
 
-        # Remove duplicates by checking the 'id' field
-        for replay in replays[:-1]:  # Ignore the last item to prevent duplication
-            if replay["id"] not in seen_ids:
-                all_replays.append(replay)
-                seen_ids.add(replay["id"])
+    # Extract Pokémon team from log
+    team = set()
+    if player_slot:
+        for line in replay_data.get('log', '').split('\n'):
+            if f"|poke|{player_slot}|" in line:
+                pokemon_name = line.split('|')[3].split(',')[0]
+                team.add(pokemon_name)
 
-        if len(replays) < 51:  # If fewer than 51 results, stop (last page reached)
-            print(f"✅ Pagination Complete: Fetched {len(all_replays)} total replays.")
-            break
+    team_id = generate_team_id(team, existing_teams)  # Assign simple numerical ID
 
-        page += 1  # Move to the next page
+    # 🛠 **NEW: Handle Bo3 Matches Properly**
+    match_number = replay_data.get('id', 'Unknown').split('-')[-1]  # Extract match number
+    if match_format.endswith("(Bo3)"):
+        match_number = f"Game {match_number[-1]}"  # Tag Game 1, 2, or 3
 
-    return all_replays
+    return {
+        'Match Title': match_title,
+        'Match Date': match_date,  # Only keep the formatted date
+        'Replay URL': replay_url,
+        'Exact User Name Match': "Yes" if exact_user_match else "No",
+        'Team': ', '.join(team) if team else "Unknown",
+        'Team ID': team_id,  # Add simple numerical Team ID column
+        'Match Number': match_number  # Identify Game 1, 2, 3 in Bo3 sets
+    }
 
-def filter_replays(replays, match_format):
-    """Apply filtering AFTER fetching all replays."""
-    if match_format == "All":
-        return replays
-    return [r for r in replays if match_format in r["format"]]
+def process_replay_csv(username, csv_file, output_file="processed_replays.csv", team_stats_file="team_statistics.csv"):
+    """Process fetched replay URLs, extract data, and generate statistics."""
+    print(f"📂 Loading CSV: {csv_file}")  # Debugging log
 
-def convert_upload_time(timestamp):
-    """Convert Unix timestamp to human-readable format."""
-    return datetime.utcfromtimestamp(timestamp).strftime('%m-%d-%Y') if isinstance(timestamp, int) else "Unknown Date"
+    df_input = pd.read_csv(csv_file)
 
-if source_option == "Fetch from Showdown":
-    if st.button("Fetch Replays for Username"):
-        print("🔄 Button Clicked: Fetching replays...")  # Debugging log
+    if "replay_url" not in df_input.columns:
+        print("❌ CSV file is missing 'replay_url' column!")
+        return pd.DataFrame(), pd.DataFrame()
 
-        if not username.strip():
-            st.error("⚠️ Please enter a Pokémon Showdown username.")
-        else:
-            with st.spinner("Fetching replays..."):
-                replays = fetch_replays(username)
-                if replays:
-                    # Apply filtering **after** fetching all replays
-                    filtered_replays = filter_replays(replays, match_format)
-                    replay_df = pd.DataFrame(filtered_replays)
+    replay_urls = df_input["replay_url"].dropna().tolist()
+    print(f"🔍 Found {len(replay_urls)} replay URLs for processing.")  # Debug log
 
-                    # Convert upload time to readable format
-                    replay_df["uploadtime"] = replay_df["uploadtime"].apply(convert_upload_time)
+    existing_teams = {}  # Dictionary to store team IDs
+    results = []
+    for url in replay_urls:
+        data = get_showdown_replay_data(username, url, existing_teams)
+        if data:
+            results.append(data)
 
-                    # ✅ FIX: Construct Replay URLs
-                    replay_df["replay_url"] = "https://replay.pokemonshowdown.com/" + replay_df["id"]
+    if not results:
+        print("❌ No valid replay data found!")
+        return pd.DataFrame(), pd.DataFrame()
 
-                    # ✅ Only keep relevant columns
-                    replay_df = replay_df[["replay_url", "id", "format", "players", "uploadtime", "rating"]]
+    df_output = pd.DataFrame(results)
+    df_output.to_csv(output_file, index=False)
+    print(f"✅ Processed replay data saved to {output_file}")
 
-                    # Save filtered replays to CSV for processing
-                    replay_df.to_csv(replay_csv, index=False)
+    # Generate team statistics based on unique Team ID
+    df_output['Match Date'] = pd.to_datetime(df_output['Match Date'], format="%m-%d-%Y", errors='coerce')
+    df_output['Last Used'] = df_output.groupby('Team ID')['Match Date'].transform('max')
 
-                    st.subheader(f"🔗 Found {len(filtered_replays)} Replays")
-                    st.dataframe(replay_df)
-                else:
-                    st.error("No replays found or an error occurred.")
+    team_stats = df_output.groupby(['Team ID', 'Team', 'Exact User Name Match']).agg(
+        Count=('Match Title', 'count'),
+        Last_Used=('Last Used', 'max')
+    ).reset_index()
 
-elif source_option == "Upload CSV with Replay Links":
-    uploaded_file = st.file_uploader("Upload a CSV file containing replay links", type=["csv"])
+    team_stats.to_csv(team_stats_file, index=False)
+    print(f"✅ Team stats saved to {team_stats_file}")
 
-    if uploaded_file is not None:
-        replay_csv = "uploaded_replays.csv"
-        with open(replay_csv, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        
-        st.success(f"✅ Uploaded {uploaded_file.name}. Ready to process.")
-
-# 🚀 Process Replays Button
-if st.button("Process These Replays"):
-    print("🔄 Button Clicked: Processing replays...")  # Debug log
-    output_file = "processed_replays.csv"
-    team_stats_file = "team_statistics.csv"
-
-    with st.spinner("🔄 Processing Replay Data..."):
-        try:
-            df, team_stats = process_replay_csv(username, replay_csv, output_file, team_stats_file)
-
-            if df is None or isinstance(df, pd.DataFrame) and df.empty:
-                st.error("⚠️ No valid replay data was processed.")
-                print("❌ No valid replay data found in CSV.")
-            else:
-                print(f"✅ Successfully processed {len(df)} replays!")  # Debugging output
-                print(f"✅ Generated {len(team_stats)} team stats!")
-
-                st.subheader("📊 Processed Replay Data")
-                st.dataframe(df)
-
-                st.subheader("📈 Team Statistics")
-                st.dataframe(team_stats)
-
-                st.download_button("📥 Download Processed Replays", data=df.to_csv(index=False), file_name="processed_replays.csv", mime="text/csv")
-                st.download_button("📥 Download Team Statistics", data=team_stats.to_csv(index=False), file_name="team_statistics.csv")
-
-        except Exception as e:
-            print(f"❌ Error Processing Replays: {e}")  # Debug error
-            st.error(f"An error occurred while processing replays: {e}")
+    return df_output, team_stats
