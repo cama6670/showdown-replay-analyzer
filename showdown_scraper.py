@@ -22,7 +22,7 @@ def generate_team_id(team, existing_teams):
         existing_teams[sorted_team] = new_id
         return new_id
 
-def get_showdown_replay_data(username, replay_url, existing_teams):
+def get_showdown_replay_data(replay_url, existing_teams):
     """Fetch replay data and extract match details."""
     json_url = replay_url + ".json"
 
@@ -42,25 +42,10 @@ def get_showdown_replay_data(username, replay_url, existing_teams):
     upload_time = replay_data.get('uploadtime', None)
     match_date = format_upload_time(upload_time)  # Convert timestamp to MM-DD-YYYY
 
-    # Determine player slot and exact match
-    exact_user_match = False
-    player_slot = None
-    if len(players) >= 2:
-        p1_name, p2_name = players[0], players[1]
-        if username == p1_name:
-            player_slot = 'p1'
-            exact_user_match = True
-        elif username.lower() == p1_name.lower():
-            player_slot = 'p1'
-        elif username == p2_name:
-            player_slot = 'p2'
-            exact_user_match = True
-        elif username.lower() == p2_name.lower():
-            player_slot = 'p2'
-
     # Extract Pokémon team from log
     team = set()
-    if player_slot:
+    if len(players) >= 2:
+        player_slot = 'p1'  # Default to player 1
         for line in replay_data.get('log', '').split('\n'):
             if f"|poke|{player_slot}|" in line:
                 pokemon_name = line.split('|')[3].split(',')[0]
@@ -70,14 +55,13 @@ def get_showdown_replay_data(username, replay_url, existing_teams):
 
     return {
         'Match Title': match_title,
-        'Match Date': match_date,  # Only keep the formatted date
+        'Match Date': match_date,
         'Replay URL': replay_url,
-        'Exact User Name Match': "Yes" if exact_user_match else "No",
         'Team': ', '.join(team) if team else "Unknown",
-        'Team ID': team_id  # Add simple numerical Team ID column
+        'Team ID': team_id
     }
 
-def process_replay_csv(username, csv_file, output_file="processed_replays.csv", team_stats_file="team_statistics.csv"):
+def process_replay_csv(csv_file, output_file="processed_replays.csv", team_stats_file="team_statistics.csv"):
     """Process fetched replay URLs, extract data, and generate statistics."""
     print(f"📂 Loading CSV: {csv_file}")  # Debugging log
 
@@ -93,7 +77,7 @@ def process_replay_csv(username, csv_file, output_file="processed_replays.csv", 
     existing_teams = {}  # Dictionary to store team IDs
     results = []
     for url in replay_urls:
-        data = get_showdown_replay_data(username, url, existing_teams)
+        data = get_showdown_replay_data(url, existing_teams)
         if data:
             results.append(data)
 
@@ -109,7 +93,7 @@ def process_replay_csv(username, csv_file, output_file="processed_replays.csv", 
     df_output['Match Date'] = pd.to_datetime(df_output['Match Date'], format="%m-%d-%Y", errors='coerce')
     df_output['Last Used'] = df_output.groupby('Team ID')['Match Date'].transform('max')
 
-    team_stats = df_output.groupby(['Team ID', 'Team', 'Exact User Name Match']).agg(
+    team_stats = df_output.groupby(['Team ID', 'Team']).agg(
         Count=('Match Title', 'count'),
         Last_Used=('Last Used', 'max')
     ).reset_index()
