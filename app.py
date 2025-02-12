@@ -4,6 +4,9 @@ from showdown_scraper import process_replay_csv
 
 st.title("🎮 Pokémon Showdown Replay Analyzer")
 
+# Username Input for Player Selection
+username = st.text_input("Enter the Pokémon Showdown Username to Extract Team From:")
+
 # Upload CSV File
 uploaded_file = st.file_uploader("Upload CSV with Replay URLs", type=["csv"])
 
@@ -17,7 +20,7 @@ if uploaded_file is not None:
     output_file = "processed_replays.csv"
     team_stats_file = "team_statistics.csv"
 
-    df, team_stats = process_replay_csv(csv_file, output_file, team_stats_file)
+    df, team_stats = process_replay_csv(username, csv_file, output_file, team_stats_file)
 
     # Display the processed tables
     st.subheader("📊 Processed Replay Data")
