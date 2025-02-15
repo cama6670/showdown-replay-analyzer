@@ -1,95 +1,59 @@
+import streamlit as st
 import pandas as pd
-import requests
-import time
+from showdown_scraper_username import fetch_replays_by_username, process_replay_csv
 
-SHOWDOWN_API_URL = "https://replay.pokemonshowdown.com/"
+# Streamlit UI
+st.set_page_config(page_title="Pokémon Showdown Username-Based Replay Fetcher", page_icon="🎮")
 
-def fetch_replays_by_username(username):
-    """Fetch replays by username using the Pokémon Showdown API."""
-    try:
-        replays = []
-        page = 1
-        while True:
-            url = f"https://replay.pokemonshowdown.com/search.json?user={username}&page={page}"
-            response = requests.get(url)
-            response.raise_for_status()
-            data = response.json()
+st.title("🎮 Pokémon Showdown Username-Based Replay Fetcher")
 
-            if not data:
-                break  # Stop if there are no more pages
+# Username Input Field (with Placeholder)
+username = st.text_input("Enter Pokémon Showdown Username:", placeholder="Wolfe Glick")
 
-            replays.extend(data)
-            print(f"✅ Fetched {len(data)} replays from page {page}")
+# Select Format Filter
+format_option = st.radio("Select Format Filter:", ["All Matches", "Reg G", "Reg H"])
 
-            if len(data) < 50:
-                break  # No more pages to fetch
+# Fetch and Process Replays Button
+if st.button("Fetch and Process Replays"):
+    if username.strip() == "":
+        st.error("❌ Please enter a username.")
+    else:
+        with st.status(f"🔄 Fetching replays for **{username}**...", expanded=True):
+            # Fetch replay data based on username
+            fetched_replays = fetch_replays_by_username(username)
 
-            page += 1
-            time.sleep(1)  # Avoid hitting API limits
+        if fetched_replays.empty:
+            st.error("❌ No replays found for this username.")
+        else:
+            # Apply format filtering
+            if format_option == "Reg G":
+                fetched_replays = fetched_replays[fetched_replays['format'].str.contains("Reg G", case=False, na=False)]
+            elif format_option == "Reg H":
+                fetched_replays = fetched_replays[fetched_replays['format'].str.contains("Reg H", case=False, na=False)]
 
-        if not replays:
-            print(f"❌ No replays found for username: {username}")
-            return pd.DataFrame()
+            # Save fetched replays for processing
+            csv_file = "fetched_replays.csv"
+            fetched_replays.to_csv(csv_file, index=False)
 
-        df_replays = pd.DataFrame(replays)
-        df_replays["uploadtime"] = pd.to_datetime(df_replays["uploadtime"], unit="s").dt.strftime("%m-%d-%Y")
+            # Process the replay data
+            output_file = "processed_replays.csv"
+            team_stats_file = "team_statistics.csv"
 
-        return df_replays
+            with st.status("🔄 Processing replays...", expanded=True):
+                df, team_stats = process_replay_csv(username, csv_file, output_file, team_stats_file)
 
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Error fetching replays: {e}")
-        return pd.DataFrame()
+            if df.empty:
+                st.error("❌ No valid replay data found after processing.")
+            else:
+                # Display processed tables
+                st.subheader("📊 Processed Replay Data")
+                st.dataframe(df)
 
-def process_replay_csv(username, csv_file, output_file, team_stats_file):
-    """Processes the replay CSV and extracts match data."""
-    try:
-        df_input = pd.read_csv(csv_file)
+                st.subheader("📈 Team Statistics")
+                st.dataframe(team_stats)
 
-        if 'id' not in df_input.columns:
-            print("❌ CSV file is missing the 'id' column.")
-            return pd.DataFrame(), pd.DataFrame()
-
-        results = []
-        for _, row in df_input.iterrows():
-            replay_url = f"{SHOWDOWN_API_URL}{row['id']}.json"
-
-            try:
-                response = requests.get(replay_url)
-                response.raise_for_status()
-                replay_data = response.json()
-
-                if "players" not in replay_data or len(replay_data["players"]) < 2:
-                    continue
-
-                match_title = f"{replay_data['format']}: {replay_data['players'][0]} vs. {replay_data['players'][1]}"
-                match_date = pd.to_datetime(replay_data.get('uploadtime', 0), unit='s').strftime("%m-%d-%Y")
-                exact_match = "Yes" if username in replay_data["players"] else "No"
-
-                team = []
-                for player in ["p1", "p2"]:
-                    if player in replay_data and username in replay_data[player]:
-                        team = replay_data.get("log", "").split("|poke|")[1:7]
-                        team = [poke.split("|")[1] for poke in team]
-
-                results.append({
-                    "Match Title": match_title,
-                    "Match Date": match_date,
-                    "Replay URL": replay_url,
-                    "Exact User Name Match": exact_match,
-                    "Team": ", ".join(team) if team else "N/A"
-                })
-
-                time.sleep(1)  # Avoid API rate limits
-
-            except requests.exceptions.RequestException as e:
-                print(f"❌ Error fetching replay {replay_url}: {e}")
-
-        df_output = pd.DataFrame(results)
-        df_output.to_csv(output_file, index=False)
-        print(f"✅ Processed replay data saved to {output_file}")
-
-        return df_output, pd.DataFrame()  # Placeholder for team_stats
-
-    except Exception as e:
-        print(f"❌ Error processing CSV: {e}")
-        return pd.DataFrame(), pd.DataFrame()
+                # Provide download buttons
+                st.download_button("📥 Download Processed Replays", data=df.to_csv(index=False), file_name="processed_replays.csv", mime="text/csv")
+                st.download_button("📥 Download Team Statistics", data=team_stats.to_csv(index=False), file_name="team_statistics.csv", mime="text/csv")
+                
+                st.success(f"✅ Successfully processed {len(df)} replays!")
