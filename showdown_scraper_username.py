@@ -10,19 +10,23 @@ def format_upload_time(timestamp):
     return "Unknown Date"
 
 def fetch_replays_by_username(username):
-    """Fetch all replay URLs for a given username using Pokémon Showdown API."""
+    """Fetch all replay URLs for a given username using the Pokémon Showdown API."""
     base_url = f"https://replay.pokemonshowdown.com/search.json?user={username}"
     all_replays = []
     page = 1
 
     while True:
-        response = requests.get(f"{base_url}&page={page}")
+        full_url = f"{base_url}&page={page}"
+        print(f"🔍 Fetching: {full_url}")  # Debugging print statement
+        
+        response = requests.get(full_url)
         if response.status_code != 200:
             print(f"❌ API request failed with status {response.status_code}")
             break
         
         try:
             data = response.json()
+            print(f"✅ API Response (Page {page}): {json.dumps(data, indent=2)[:500]}")  # Print first 500 characters for debugging
         except json.JSONDecodeError:
             print("❌ Failed to parse JSON response from Showdown API")
             break
@@ -55,11 +59,11 @@ def generate_team_id(team, existing_teams):
     if not team:
         return "Unknown_Team"
 
-    sorted_team = ",".join(sorted(team))  # Normalize team order
+    sorted_team = ",".join(sorted(team))
     if sorted_team in existing_teams:
-        return existing_teams[sorted_team]  # Use existing ID
+        return existing_teams[sorted_team]
     else:
-        new_id = len(existing_teams) + 1  # Assign next available number
+        new_id = len(existing_teams) + 1
         existing_teams[sorted_team] = new_id
         return new_id
 
