@@ -1,89 +1,63 @@
 import requests
 import pandas as pd
-import time
+import ast
 
 SHOWDOWN_API_URL = "https://replay.pokemonshowdown.com/search.json"
 
 def fetch_replays_by_username(username):
-    """
-    Fetches all available replays for a given username from the Pokémon Showdown API.
-    Uses pagination to get more than 50 replays.
-    """
-    print(f"🔄 Fetching replays for {username}...")  # Debugging message
-    all_replays = []
-    page = 1  # Start from page 1
-    
+    """Fetch replays from Pokémon Showdown based on username."""
+    replays = []
+    page = 1
+
     while True:
-        print(f"🔍 Fetching page {page}...")
-        params = {"user": username, "page": page}
-        response = requests.get(SHOWDOWN_API_URL, params=params)
-
+        response = requests.get(SHOWDOWN_API_URL, params={"user": username, "page": page})
         if response.status_code != 200:
-            print(f"❌ Error fetching replays: {response.status_code}")
-            break
+            break  # Stop on request failure
+        
+        data = response.json()
+        if not data:
+            break  # Stop if no more replays found
+        
+        replays.extend(data)
+        page += 1  # Move to next page
 
-        replays = response.json()
-
-        if not replays:
-            print(f"✅ Pagination complete. Total replays fetched: {len(all_replays)}")
-            break  # Stop fetching if no more replays are returned
-
-        all_replays.extend(replays)
-        page += 1
-        time.sleep(1)  # Respect API rate limits
-
-    if not all_replays:
-        return pd.DataFrame()  # Return an empty DataFrame if no data found
-
-    df = pd.DataFrame(all_replays)
-    print(f"✅ Successfully fetched {len(df)} replays for {username}.")
-    return df
+    # Convert to DataFrame
+    replay_df = pd.DataFrame(replays)
+    
+    # Ensure correct column handling
+    if 'id' in replay_df.columns and 'format' in replay_df.columns and 'players' in replay_df.columns:
+        replay_df["replay_url"] = "https://replay.pokemonshowdown.com/" + replay_df["id"]
+    else:
+        return pd.DataFrame()  # Return empty if required columns are missing
+    
+    return replay_df
 
 def process_replay_csv(username, csv_file, output_file, team_stats_file):
-    """
-    Processes replay data from the fetched CSV, extracts team compositions, match titles,
-    and formats the data for analysis.
-    """
-    print(f"📂 Loading CSV: {csv_file}")
+    """Process replay data and save formatted output to CSV."""
     df_input = pd.read_csv(csv_file)
 
-    if 'id' not in df_input.columns or 'players' not in df_input.columns:
-        print("❌ CSV file is missing required columns!")
-        return pd.DataFrame(), pd.DataFrame()  # Return empty DataFrames
+    if 'replay_url' not in df_input.columns:
+        return None, None  # If replay_url column is missing, return empty
 
+    replay_urls = df_input['replay_url'].dropna().tolist()
     results = []
 
     for _, row in df_input.iterrows():
-        match_id = row['id']
-        match_url = f"https://replay.pokemonshowdown.com/{match_id}"
-        match_title = row['format'] + ": " + " vs. ".join(eval(row['players']))
-        match_date = pd.to_datetime(row['uploadtime'], unit='s').strftime('%m-%d-%Y')
+        try:
+            # Safely parse players
+            players_list = ast.literal_eval(row["players"]) if isinstance(row["players"], str) else []
+            match_title = row['format'] + ": " + " vs. ".join(players_list)
+        except (SyntaxError, ValueError):
+            match_title = row['format'] + ": Unknown vs. Unknown"
 
-        # Determine if the user was in this match
-        players = eval(row['players'])  # Convert from string to list
-        exact_match = "Yes" if username in players else "No"
-
+        # Append result
         results.append({
             "Match Title": match_title,
-            "Match Date": match_date,
-            "Replay URL": match_url,
-            "Exact User Name Match": exact_match
+            "Match Date": pd.to_datetime(row.get('uploadtime', ''), unit='s').strftime('%m-%d-%Y') if 'uploadtime' in row else '',
+            "Replay URL": row["replay_url"]
         })
 
     df_output = pd.DataFrame(results)
     df_output.to_csv(output_file, index=False)
-    print(f"✅ Processed replay data saved to {output_file}")
 
-    # Compute team statistics
-    df_output['Team'] = df_output.groupby('Replay URL')['Match Title'].transform(lambda x: ', '.join(x))
-    df_output['Last Used'] = df_output.groupby('Team')['Match Date'].transform('max')
-
-    team_stats = df_output.groupby('Team').agg(
-        Total_Count=('Match Title', 'count'),
-        Last_Used=('Last Used', 'max')
-    ).reset_index()
-
-    team_stats.to_csv(team_stats_file, index=False)
-    print(f"✅ Team statistics saved to {team_stats_file}")
-
-    return df_output, team_stats
+    return df_output, None  # Team stats handling can be added later if needed
