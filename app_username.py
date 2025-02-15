@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from showdown_scraper_username import fetch_replays_by_username, process_replay_csv
 
-# 🎮 App Title
 st.title("🎮 Pokémon Showdown Username-Based Replay Fetcher")
 
 # 📝 Username Input
@@ -17,8 +16,8 @@ if st.button("Fetch and Process Replays"):
         st.error("❌ Please enter a username.")
     else:
         st.info(f"🔄 Fetching replays for **{username}**...")
-        
-        # Fetch replay data based on username
+
+        # Fetch replay data based on username (with pagination)
         fetched_replays = fetch_replays_by_username(username)
 
         if fetched_replays.empty:
@@ -37,11 +36,11 @@ if st.button("Fetch and Process Replays"):
                 csv_file = "fetched_replays.csv"
                 fetched_replays.to_csv(csv_file, index=False)
                 st.success(f"✅ Successfully fetched {len(fetched_replays)} replays!")
-                
+
                 # 🔄 Process the replay data
                 output_file = "processed_replays.csv"
                 team_stats_file = "team_statistics.csv"
-                
+
                 st.info("🔄 Processing replays, please wait...")
                 df, team_stats = process_replay_csv(username, csv_file, output_file, team_stats_file)
 
