@@ -56,3 +56,44 @@ def fetch_replays_by_username(username):
 
     print(f"✅ Total replays fetched: {len(replay_df)}")
     return replay_df
+
+def process_replay_csv(username, csv_file, output_file="processed_replays.csv", team_stats_file="team_statistics.csv"):
+    """Process fetched replay URLs, extract data, and generate statistics."""
+    print(f"📂 Loading CSV: {csv_file}")
+
+    df_input = pd.read_csv(csv_file)
+
+    if "replay_url" not in df_input.columns:
+        print("❌ CSV file is missing 'replay_url' column!")
+        return pd.DataFrame(), pd.DataFrame()
+
+    replay_urls = df_input["replay_url"].dropna().tolist()
+    print(f"🔍 Found {len(replay_urls)} replay URLs for processing.")
+
+    results = []
+    for url in replay_urls:
+        data = get_showdown_replay_data(username, url)
+        if data:
+            results.append(data)
+
+    if not results:
+        print("❌ No valid replay data found!")
+        return pd.DataFrame(), pd.DataFrame()
+
+    df_output = pd.DataFrame(results)
+    df_output.to_csv(output_file, index=False)
+    print(f"✅ Processed replay data saved to {output_file}")
+
+    # Generate team statistics based on unique Team ID
+    df_output['Match Date'] = pd.to_datetime(df_output['Match Date'], format="%m-%d-%Y", errors='coerce')
+    df_output['Last Used'] = df_output.groupby('Team ID')['Match Date'].transform('max')
+
+    team_stats = df_output.groupby(['Team ID', 'Team', 'Exact User Name Match']).agg(
+        Count=('Match Title', 'count'),
+        Last_Used=('Last Used', 'max')
+    ).reset_index()
+
+    team_stats.to_csv(team_stats_file, index=False)
+    print(f"✅ Team stats saved to {team_stats_file}")
+
+    return df_output, team_stats
