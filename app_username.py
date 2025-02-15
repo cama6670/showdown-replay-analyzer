@@ -31,9 +31,31 @@ if st.button("Fetch and Process Replays"):
             elif format_option == "Reg H":
                 fetched_replays = fetched_replays[fetched_replays['format'].str.contains("Reg H", case=False, na=False)]
 
+            # Display number of replays found
+            st.success(f"✅ Found {len(fetched_replays)} replays for {username}.")
+
             # Save fetched replays for processing
             csv_file = "fetched_replays.csv"
             fetched_replays.to_csv(csv_file, index=False)
+
+            # 🔄 **Optional Step: Upload Additional Replays**
+            st.subheader("📂 (Optional) Upload Additional Replay URLs")
+            uploaded_file = st.file_uploader("Upload a CSV containing additional replay URLs", type=["csv"])
+
+            if uploaded_file:
+                uploaded_replays = pd.read_csv(uploaded_file)
+                if 'replay_url' not in uploaded_replays.columns:
+                    st.error("❌ CSV must contain a 'replay_url' column.")
+                else:
+                    # Remove duplicates
+                    all_replays = pd.concat([fetched_replays, uploaded_replays], ignore_index=True).drop_duplicates(subset=['replay_url'])
+                    st.success(f"✅ After removing duplicates, {len(all_replays)} unique replays remain.")
+
+                    # Save combined replays for processing
+                    csv_file = "final_replays.csv"
+                    all_replays.to_csv(csv_file, index=False)
+            else:
+                all_replays = fetched_replays
 
             # Process the replay data
             output_file = "processed_replays.csv"
