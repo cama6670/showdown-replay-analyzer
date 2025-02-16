@@ -8,59 +8,67 @@ st.title("🎮 Pokémon Showdown Username-Based Replay Fetcher")
 username = st.text_input("Enter Pokémon Showdown Username:", "")
 
 # Select Format Filter
-format_option = st.radio("Select Format Filter:", ["All Matches", "Reg G", "Reg H"])
+format_option = st.radio("Select Format Filter:", ["All Matches", "Reg G", "Reg F"])
 
-# Fetch Replays Button
+# Fetch and Process Replays Button
 if st.button("Fetch Replays"):
-    if not username.strip():
+    if username.strip() == "":
         st.error("❌ Please enter a username.")
     else:
-        st.info(f"🔄 Fetching replays for **{username}**...")
+        st.info(f"🔍 Fetching replays for **{username}**...")
         fetched_replays = fetch_replays_by_username(username)
 
         if fetched_replays.empty:
             st.error("❌ No replays found for this username.")
         else:
+            # Apply format filtering
             if format_option == "Reg G":
-                fetched_replays = fetched_replays[fetched_replays['format'].str.contains("RegG", case=False, na=False)]
-            elif format_option == "Reg H":
-                fetched_replays = fetched_replays[fetched_replays['format'].str.contains("RegH", case=False, na=False)]
+                fetched_replays = fetched_replays[
+                    fetched_replays['format'].str.contains("VGC 2024 Reg G|VGC 2025 Reg G", case=False, na=False)
+                ]
+            elif format_option == "Reg F":
+                fetched_replays = fetched_replays[
+                    fetched_replays['format'].str.contains("VGC 2024 Reg F", case=False, na=False)
+                ]
 
-            fetched_replays["Replay URL"] = "https://replay.pokemonshowdown.com/" + fetched_replays["id"]
-            fetched_replays = fetched_replays[["Replay URL"]]
+            # Save fetched replays for processing
+            csv_file = "fetched_replays.csv"
+            fetched_replays.to_csv(csv_file, index=False)
 
-            # Save fetched replays
-            fetched_replays.to_csv("fetched_replays.csv", index=False)
-            st.success(f"✅ Fetched {len(fetched_replays)} replays!")
+            st.success(f"✅ Found {len(fetched_replays)} replays for **{username}**.")
 
             # Optional CSV Upload
             st.subheader("📂 (Optional) Upload Additional Replay URLs")
             uploaded_file = st.file_uploader("Upload a CSV containing additional replay URLs", type=["csv"])
+            if uploaded_file:
+                csv_data = pd.read_csv(uploaded_file)
+                if "id" in csv_data.columns:
+                    existing_ids = set(fetched_replays["id"])
+                    new_data = csv_data[~csv_data["id"].isin(existing_ids)]
+                    num_new = len(new_data)
+                    num_removed = len(csv_data) - num_new
+                    fetched_replays = pd.concat([fetched_replays, new_data], ignore_index=True)
 
-            if uploaded_file is not None:
-                uploaded_replays = pd.read_csv(uploaded_file)
+                    st.success(
+                        f"✅ After merging: {len(fetched_replays)} unique replays found! "
+                        f"({len(fetched_replays)-num_new} from Showdown, {num_new} from CSV). Removed {num_removed} duplicate(s)."
+                    )
 
-                if "Replay URL" not in uploaded_replays.columns:
-                    st.error("❌ The uploaded CSV must contain a 'Replay URL' column.")
-                else:
-                    combined_replays = pd.concat([fetched_replays, uploaded_replays]).drop_duplicates()
-                    duplicates_removed = len(fetched_replays) + len(uploaded_replays) - len(combined_replays)
-                    unique_from_csv = len(uploaded_replays) - duplicates_removed
-                    st.success(f"✅ After merging: {len(combined_replays)} unique replays found! ({len(fetched_replays)} from Showdown, {unique_from_csv} from CSV). Removed {duplicates_removed} duplicate(s).")
-                    
-                    # Save merged data
-                    combined_replays.to_csv("final_replays.csv", index=False)
+            # Process the replay data
+            output_file = "processed_replays.csv"
+            team_stats_file = "team_statistics.csv"
+            df, team_stats = process_replay_csv(username, csv_file, output_file, team_stats_file)
 
-            # Process Replays Button
-            if st.button("Process Replays"):
-                st.info("🔄 Processing replays...")
-                df, team_stats = process_replay_csv(username, "final_replays.csv", "processed_replays.csv", "team_statistics.csv")
+            # Display the processed tables
+            st.subheader("📊 Processed Replay Data")
+            st.dataframe(df)
 
-                st.subheader("📊 Processed Replay Data")
-                st.dataframe(df)
-
-                st.subheader("📈 Team Statistics")
+            st.subheader("📈 Team Statistics")
+            if team_stats is not None and not team_stats.empty:
                 st.dataframe(team_stats)
+            else:
+                st.warning("⚠ No team statistics were generated.")
 
-                st.download_button("📥 Download Processed Replays", df.to_csv(index=False), file_name="processed_replays.csv", mime="text/csv")
-                st.download_button("📥 Download Team Statistics", team_stats.to_csv(index=False), file_name="team_statistics.csv", mime="text/csv")
+            # Provide download buttons
+            st.download_button("📥 Download Processed Replays", data=df.to_csv(index=False), file_name="processed_replays.csv", mime="text/csv")
+            st.download_button("📥 Download Team Statistics", data=team_stats.to_csv(index=False), file_name="team_statistics.csv", mime="text/csv")
