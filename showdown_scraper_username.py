@@ -68,7 +68,7 @@ def fetch_team_from_replay(replay_id, username):
 
 
 def extract_teams_and_opponent(replay_log, username):
-    """Extracts full teams and finds opponent's name from the replay log"""
+    """Extracts full teams and finds opponent's name from the replay log safely."""
     teams = {"p1": [], "p2": []}
     opponent = "Unknown"
     lines = replay_log.split("\n")
@@ -76,17 +76,17 @@ def extract_teams_and_opponent(replay_log, username):
     player_dict = {}  # Store player mapping (p1 -> player1, p2 -> player2)
     for line in lines:
         parts = line.split("|")
-        if len(parts) > 2:
-            if parts[1] == "player":
-                player_slot, player_name = parts[2], parts[3]
-                player_dict[player_slot] = player_name
+        if len(parts) < 4:  # Ensure there are at least 4 parts
+            continue  # Skip this line if it's too short
 
-            if parts[1] == "poke":
-                player, pokemon = parts[2], parts[3].split(",")[0]
-                if player == "p1":
-                    teams["p1"].append(pokemon)
-                elif player == "p2":
-                    teams["p2"].append(pokemon)
+        if parts[1] == "player":
+            player_slot, player_name = parts[2], parts[3]
+            player_dict[player_slot] = player_name
+
+        if parts[1] == "poke" and len(parts) >= 4:  # Check that parts[3] exists
+            player, pokemon = parts[2], parts[3].split(",")[0]
+            if player in teams:
+                teams[player].append(pokemon)
 
     # Determine opponent based on who isn't the searched username
     for slot, player_name in player_dict.items():
@@ -95,6 +95,7 @@ def extract_teams_and_opponent(replay_log, username):
             break
 
     return teams, opponent
+
 
 
 def assign_sequential_team_ids(team_list):
