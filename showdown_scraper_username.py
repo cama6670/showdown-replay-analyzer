@@ -131,23 +131,42 @@ def process_replay_csv(username, input_csv, output_csv, team_stats_csv):
     if "opponent" not in df_input.columns:
         df_input["opponent"] = "Unknown"
 
-    df_input['Replay URL'] = "https://replay.pokemonshowdown.com/" + df_input['id'].astype(str)
-    df_input['Match Title'] = df_input['format'] + ": " + username + " vs. " + df_input['opponent']
-    df_input['Match Date'] = pd.to_datetime(df_input['uploadtime'], unit='s').dt.strftime("%m-%d-%Y")
-
     # Convert stored JSON strings into dictionaries
     df_input["teams"] = df_input["teams"].apply(lambda x: json.loads(x) if isinstance(x, str) else x)
 
-    # Create and assign Team IDs
+    # Assign replay URL
+    df_input['Replay URL'] = "https://replay.pokemonshowdown.com/" + df_input['id'].astype(str)
+
+    # ✅ **Fix: Ensure we pull the exact Match Title from API data**
+    if "players" in df_input.columns:
+        df_input["Match Title"] = df_input.apply(
+            lambda row: f"{row['format']}: {row['players'][0]} vs. {row['players'][1]}"
+            if isinstance(row["players"], list) and len(row["players"]) == 2 
+            else f"{row['format']}: ??? vs. ???",
+            axis=1
+        )
+    else:
+        df_input["Match Title"] = df_input['format'] + ": ??? vs. ???"  # Fallback
+
+    # ✅ **Fix: Debug missing titles**
+    df_missing_titles = df_input[df_input["Match Title"].str.contains("\?\?\?")]
+    if not df_missing_titles.empty:
+        print(f"⚠ Warning: Some replays are missing Match Titles! Here are a few:")
+        print(df_missing_titles[["format", "players"]].head(5))
+
+    # Convert timestamp to readable format
+    df_input['Match Date'] = pd.to_datetime(df_input['uploadtime'], unit='s').dt.strftime("%m-%d-%Y")
+
+    # ✅ **Fix: Ensure we assign unique Team IDs**
     get_team_id = assign_sequential_team_ids(df_input["teams"].apply(lambda x: x.get("p1", [])))
     df_input["Team"] = df_input["teams"].apply(lambda x: ", ".join(x.get("p1", [])))  # Store team as string
     df_input["Team ID"] = df_input["teams"].apply(lambda x: get_team_id(x.get("p1", [])))
 
-    # Processed Replay Data Table
+    # ✅ **Processed Replay Data Table**
     df_output = df_input[['Team ID', 'Match Title', 'Match Date', 'Replay URL', 'Team']]
     df_output.to_csv(output_csv, index=False)
 
-    # Generate Team Statistics Table
+    # ✅ **Team Statistics Table**
     team_stats_df = df_input.groupby(["Team ID", "Team"]).agg(
         Times_Used=("Team ID", "count"),
         Last_Used=("Match Date", "max")  # Get most recent date team was used
