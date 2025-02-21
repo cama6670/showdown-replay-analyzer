@@ -2,6 +2,7 @@ import requests
 import pandas as pd
 import json
 import time
+import ast 
 
 SHOWDOWN_API_URL = "https://replay.pokemonshowdown.com/search.json"
 
@@ -134,11 +135,13 @@ def process_replay_csv(username, input_csv, output_csv, team_stats_csv):
     # Convert stored JSON strings into dictionaries
     df_input["teams"] = df_input["teams"].apply(lambda x: json.loads(x) if isinstance(x, str) else x)
 
-    # Assign replay URL
-    df_input['Replay URL'] = "https://replay.pokemonshowdown.com/" + df_input['id'].astype(str)
-
-    # ✅ **Fix: Ensure we pull the exact Match Title from API data**
+    # ✅ **Fix: Ensure 'players' is properly parsed**
     if "players" in df_input.columns:
+        df_input["players"] = df_input["players"].apply(
+            lambda x: ast.literal_eval(x) if isinstance(x, str) and x.startswith("[") else x
+        )
+
+        # Ensure player names are properly extracted
         df_input["Match Title"] = df_input.apply(
             lambda row: f"{row['format']}: {row['players'][0]} vs. {row['players'][1]}"
             if isinstance(row["players"], list) and len(row["players"]) == 2 
@@ -157,7 +160,7 @@ def process_replay_csv(username, input_csv, output_csv, team_stats_csv):
     # Convert timestamp to readable format
     df_input['Match Date'] = pd.to_datetime(df_input['uploadtime'], unit='s').dt.strftime("%m-%d-%Y")
 
-    # ✅ **Fix: Ensure we assign unique Team IDs**
+    # ✅ **Ensure we assign unique Team IDs**
     get_team_id = assign_sequential_team_ids(df_input["teams"].apply(lambda x: x.get("p1", [])))
     df_input["Team"] = df_input["teams"].apply(lambda x: ", ".join(x.get("p1", [])))  # Store team as string
     df_input["Team ID"] = df_input["teams"].apply(lambda x: get_team_id(x.get("p1", [])))
@@ -172,6 +175,9 @@ def process_replay_csv(username, input_csv, output_csv, team_stats_csv):
         Last_Used=("Match Date", "max")  # Get most recent date team was used
     ).reset_index()
 
+    team_stats_df.to_csv(team_stats_csv, index=False)
+
+    return df_output, team_stats_df
     team_stats_df.to_csv(team_stats_csv, index=False)
 
     return df_output, team_stats_df
