@@ -124,8 +124,8 @@ def process_replay_csv(username, input_csv, output_csv, team_stats_csv):
         print("❌ No data to process.")
         return pd.DataFrame(), pd.DataFrame()
 
-    # ✅ Print existing columns for debugging
-    print(f"🔍 Existing Columns: {df_input.columns.tolist()}")
+    # ✅ Debug: Print existing columns
+    print(f"🔍 Existing Columns in Dataframe: {df_input.columns.tolist()}")
 
     # Ensure 'teams' and 'opponent' columns exist
     if "teams" not in df_input.columns:
@@ -138,13 +138,13 @@ def process_replay_csv(username, input_csv, output_csv, team_stats_csv):
     # Convert stored JSON strings into dictionaries
     df_input["teams"] = df_input["teams"].apply(lambda x: json.loads(x) if isinstance(x, str) else x)
 
-    # ✅ Ensure 'players' is properly parsed
+    # ✅ Ensure 'players' column is properly parsed
     if "players" in df_input.columns:
         df_input["players"] = df_input["players"].apply(
             lambda x: ast.literal_eval(x) if isinstance(x, str) and x.startswith("[") else x
         )
 
-        # Ensure player names are properly extracted
+        # ✅ Construct Match Titles using API data
         df_input["Match Title"] = df_input.apply(
             lambda row: f"{row['format']}: {row['players'][0]} vs. {row['players'][1]}"
             if isinstance(row["players"], list) and len(row["players"]) == 2 
@@ -154,7 +154,7 @@ def process_replay_csv(username, input_csv, output_csv, team_stats_csv):
     else:
         df_input["Match Title"] = df_input['format'] + ": ??? vs. ???"  # Fallback
 
-    # ✅ Debug missing titles
+    # ✅ Debug: Check missing titles
     df_missing_titles = df_input[df_input["Match Title"].str.contains("\?\?\?")]
     if not df_missing_titles.empty:
         print(f"⚠ Warning: Some replays are missing Match Titles! Here are a few:")
@@ -162,6 +162,10 @@ def process_replay_csv(username, input_csv, output_csv, team_stats_csv):
 
     # Convert timestamp to readable format
     df_input['Match Date'] = pd.to_datetime(df_input['uploadtime'], unit='s').dt.strftime("%m-%d-%Y")
+
+    # ✅ Ensure 'Replay URL' column exists
+    if "Replay URL" not in df_input.columns:
+        df_input['Replay URL'] = "https://replay.pokemonshowdown.com/" + df_input['id'].astype(str)
 
     # ✅ Ensure we assign unique Team IDs
     get_team_id = assign_sequential_team_ids(df_input["teams"].apply(lambda x: x.get("p1", [])))
@@ -174,6 +178,7 @@ def process_replay_csv(username, input_csv, output_csv, team_stats_csv):
 
     if missing_columns:
         print(f"❌ Missing Columns: {missing_columns}")
+        print(f"🔍 Existing Columns: {df_input.columns.tolist()}")
         raise KeyError(f"Missing columns in dataframe: {missing_columns}")
 
     # ✅ Processed Replay Data Table
