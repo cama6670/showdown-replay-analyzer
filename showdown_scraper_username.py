@@ -124,9 +124,12 @@ def process_replay_csv(username, input_csv, output_csv, team_stats_csv):
         print("❌ No data to process.")
         return pd.DataFrame(), pd.DataFrame()
 
+    # ✅ Print existing columns for debugging
+    print(f"🔍 Existing Columns: {df_input.columns.tolist()}")
+
     # Ensure 'teams' and 'opponent' columns exist
     if "teams" not in df_input.columns:
-        print("⚠ Warning: 'teams' column missing in CSV. Ensure teams are fetched before processing.")
+        print("⚠ Warning: 'teams' column missing in CSV. Adding empty column.")
         df_input["teams"] = "{}"  # Default empty JSON
 
     if "opponent" not in df_input.columns:
@@ -135,7 +138,7 @@ def process_replay_csv(username, input_csv, output_csv, team_stats_csv):
     # Convert stored JSON strings into dictionaries
     df_input["teams"] = df_input["teams"].apply(lambda x: json.loads(x) if isinstance(x, str) else x)
 
-    # ✅ **Fix: Ensure 'players' is properly parsed**
+    # ✅ Ensure 'players' is properly parsed
     if "players" in df_input.columns:
         df_input["players"] = df_input["players"].apply(
             lambda x: ast.literal_eval(x) if isinstance(x, str) and x.startswith("[") else x
@@ -151,7 +154,7 @@ def process_replay_csv(username, input_csv, output_csv, team_stats_csv):
     else:
         df_input["Match Title"] = df_input['format'] + ": ??? vs. ???"  # Fallback
 
-    # ✅ **Fix: Debug missing titles**
+    # ✅ Debug missing titles
     df_missing_titles = df_input[df_input["Match Title"].str.contains("\?\?\?")]
     if not df_missing_titles.empty:
         print(f"⚠ Warning: Some replays are missing Match Titles! Here are a few:")
@@ -160,24 +163,29 @@ def process_replay_csv(username, input_csv, output_csv, team_stats_csv):
     # Convert timestamp to readable format
     df_input['Match Date'] = pd.to_datetime(df_input['uploadtime'], unit='s').dt.strftime("%m-%d-%Y")
 
-    # ✅ **Ensure we assign unique Team IDs**
+    # ✅ Ensure we assign unique Team IDs
     get_team_id = assign_sequential_team_ids(df_input["teams"].apply(lambda x: x.get("p1", [])))
     df_input["Team"] = df_input["teams"].apply(lambda x: ", ".join(x.get("p1", [])))  # Store team as string
     df_input["Team ID"] = df_input["teams"].apply(lambda x: get_team_id(x.get("p1", [])))
 
-    # ✅ **Processed Replay Data Table**
-    df_output = df_input[['Team ID', 'Match Title', 'Match Date', 'Replay URL', 'Team']]
+    # ✅ Check for missing columns before proceeding
+    required_columns = ['Team ID', 'Match Title', 'Match Date', 'Replay URL', 'Team']
+    missing_columns = [col for col in required_columns if col not in df_input.columns]
+
+    if missing_columns:
+        print(f"❌ Missing Columns: {missing_columns}")
+        raise KeyError(f"Missing columns in dataframe: {missing_columns}")
+
+    # ✅ Processed Replay Data Table
+    df_output = df_input[required_columns]
     df_output.to_csv(output_csv, index=False)
 
-    # ✅ **Team Statistics Table**
+    # ✅ Team Statistics Table
     team_stats_df = df_input.groupby(["Team ID", "Team"]).agg(
         Times_Used=("Team ID", "count"),
         Last_Used=("Match Date", "max")  # Get most recent date team was used
     ).reset_index()
 
-    team_stats_df.to_csv(team_stats_csv, index=False)
-
-    return df_output, team_stats_df
     team_stats_df.to_csv(team_stats_csv, index=False)
 
     return df_output, team_stats_df
