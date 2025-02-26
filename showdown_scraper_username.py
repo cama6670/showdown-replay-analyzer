@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import time
 import ast 
+import re
 
 SHOWDOWN_API_URL = "https://replay.pokemonshowdown.com/search.json"
 
@@ -55,30 +56,65 @@ def fetch_replays_by_username(username):
 
 
 def fetch_team_from_replay(replay_id, username):
-    """Fetches a replay and extracts full teams + opponent's name + player's slot"""
+    """Fetches a replay and extracts full teams + opponent's name + player's slot
+    
+    Parameters:
+    replay_id (str): The ID of the replay to fetch
+    username (str): The username to look for in the replay
+    
+    Returns:
+    str: JSON string containing teams, opponent name, and player slot
+    """
+    # Handle full URLs if they're passed instead of just IDs
+    if isinstance(replay_id, str) and replay_id.startswith('http'):
+        # Extract the ID from the URL
+        match = re.search(r'pokemonshowdown\.com/([^/]+)$', replay_id)
+        if match:
+            replay_id = match.group(1)
+        else:
+            print(f"❌ Invalid replay URL format: {replay_id}")
+            return json.dumps({
+                "teams": {"p1": [], "p2": []},
+                "opponent": "Unknown",
+                "player_slot": "p1"
+            })
+    
     replay_url = f"https://replay.pokemonshowdown.com/{replay_id}.json"
-    response = requests.get(replay_url)
+    try:
+        response = requests.get(replay_url)
+        
+        if response.status_code != 200:
+            print(f"❌ Error fetching replay {replay_id}: Status code {response.status_code}")
+            return json.dumps({
+                "teams": {"p1": [], "p2": []},
+                "opponent": "Unknown",
+                "player_slot": "p1"
+            })
 
-    if response.status_code != 200:
-        print(f"❌ Error fetching replay {replay_id}")
-        return "{}", "Unknown", "p1"  # Default to p1 if not found
+        data = response.json()
+        replay_log = data.get("log", "")
 
-    data = response.json()
-    replay_log = data.get("log", "")
+        print(f"🔍 Fetching replay data for {replay_id}")
+        print(replay_log[:200])  # Print first 200 characters to check log structure
 
-    print(f"🔍 Debug: Raw Replay Log for {replay_id}")
-    print(replay_log[:500])  # Print first 500 characters to check log structure
+        teams, opponent, player_slot = extract_teams_and_opponent(replay_log, username)
 
-    teams, opponent, player_slot = extract_teams_and_opponent(replay_log, username)
+        # Store the complete information in a dictionary
+        result = {
+            "teams": teams,
+            "opponent": opponent,
+            "player_slot": player_slot
+        }
 
-    # Store the complete information in a dictionary
-    result = {
-        "teams": teams,
-        "opponent": opponent,
-        "player_slot": player_slot
-    }
-
-    return json.dumps(result)  # Return all data as a JSON string
+        return json.dumps(result)  # Return all data as a JSON string
+        
+    except Exception as e:
+        print(f"❌ Exception when fetching replay {replay_id}: {str(e)}")
+        return json.dumps({
+            "teams": {"p1": [], "p2": []},
+            "opponent": "Unknown",
+            "player_slot": "p1"
+        })
 
 
 def extract_teams_and_opponent(replay_log, username):
