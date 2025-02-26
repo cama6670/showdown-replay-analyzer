@@ -29,9 +29,15 @@ def fetch_replays_by_username(username):
 
         for replay in replays:
             replay_id = replay["id"]
-            teams, opponent = fetch_team_from_replay(replay_id, username)
-            replay["teams"] = teams  # Store extracted full team data
-            replay["opponent"] = opponent  # Store opponent's actual name
+            replay_data_json = fetch_team_from_replay(replay_id, username)
+            
+            # Parse the JSON string back into a dictionary
+            replay_data = json.loads(replay_data_json)
+            
+            # Store the team data, opponent name, and player slot in the replay object
+            replay["teams"] = json.dumps(replay_data["teams"])  # Store teams as JSON string
+            replay["opponent"] = replay_data["opponent"]  # Store opponent's name
+            replay["player_slot"] = replay_data["player_slot"]  # Store which slot is the player
 
         all_replays.extend(replays)
         print(f"✅ Fetched {len(replays)} replays from page {page}")
@@ -49,13 +55,13 @@ def fetch_replays_by_username(username):
 
 
 def fetch_team_from_replay(replay_id, username):
-    """Fetches a replay and extracts full teams + opponent's name"""
+    """Fetches a replay and extracts full teams + opponent's name + player's slot"""
     replay_url = f"https://replay.pokemonshowdown.com/{replay_id}.json"
     response = requests.get(replay_url)
 
     if response.status_code != 200:
         print(f"❌ Error fetching replay {replay_id}")
-        return "{}", "Unknown"
+        return "{}", "Unknown", "p1"  # Default to p1 if not found
 
     data = response.json()
     replay_log = data.get("log", "")
@@ -63,15 +69,23 @@ def fetch_team_from_replay(replay_id, username):
     print(f"🔍 Debug: Raw Replay Log for {replay_id}")
     print(replay_log[:500])  # Print first 500 characters to check log structure
 
-    teams, opponent = extract_teams_and_opponent(replay_log, username)
+    teams, opponent, player_slot = extract_teams_and_opponent(replay_log, username)
 
-    return json.dumps(teams), opponent  # Store teams as JSON string and return opponent name
+    # Store the complete information in a dictionary
+    result = {
+        "teams": teams,
+        "opponent": opponent,
+        "player_slot": player_slot
+    }
+
+    return json.dumps(result)  # Return all data as a JSON string
 
 
 def extract_teams_and_opponent(replay_log, username):
-    """Extracts full teams and finds opponent's name from the replay log safely."""
+    """Extracts full teams and finds opponent's name and player's slot from the replay log."""
     teams = {"p1": [], "p2": []}
     opponent = "Unknown"
+    player_slot = None  # Will store which slot (p1/p2) belongs to the input username
     lines = replay_log.split("\n")
 
     player_dict = {}  # Store player mapping (p1 -> player1, p2 -> player2)
@@ -81,8 +95,10 @@ def extract_teams_and_opponent(replay_log, username):
             continue  # Skip this line if it's too short
 
         if parts[1] == "player":
-            player_slot, player_name = parts[2], parts[3]
-            player_dict[player_slot] = player_name
+            slot, player_name = parts[2], parts[3]
+            player_dict[slot] = player_name
+            if player_name.lower() == username.lower():
+                player_slot = slot  # Found the slot for our player
 
         if parts[1] == "poke" and len(parts) >= 4:  # Check that parts[3] exists
             player, pokemon = parts[2], parts[3].split(",")[0]
@@ -95,8 +111,12 @@ def extract_teams_and_opponent(replay_log, username):
             opponent = player_name
             break
 
-    return teams, opponent
+    # If we couldn't determine the player's slot, default to p1
+    if player_slot is None:
+        player_slot = "p1"
+        print(f"⚠ Warning: Could not determine player slot for {username} in replay, defaulting to p1")
 
+    return teams, opponent, player_slot
 
 
 def assign_sequential_team_ids(team_list):
@@ -127,13 +147,17 @@ def process_replay_csv(username, input_csv, output_csv, team_stats_csv):
     # ✅ Debug: Print existing columns
     print(f"🔍 Existing Columns in Dataframe: {df_input.columns.tolist()}")
 
-    # Ensure 'teams' and 'opponent' columns exist
+    # Ensure 'teams', 'opponent', and 'player_slot' columns exist
     if "teams" not in df_input.columns:
         print("⚠ Warning: 'teams' column missing in CSV. Adding empty column.")
         df_input["teams"] = "{}"  # Default empty JSON
 
     if "opponent" not in df_input.columns:
         df_input["opponent"] = "Unknown"
+        
+    if "player_slot" not in df_input.columns:
+        print("⚠ Warning: 'player_slot' column missing in CSV. Defaulting to 'p1'.")
+        df_input["player_slot"] = "p1"  # Default to p1 if not found
 
     # Convert stored JSON strings into dictionaries
     df_input["teams"] = df_input["teams"].apply(lambda x: json.loads(x) if isinstance(x, str) else x)
@@ -167,10 +191,23 @@ def process_replay_csv(username, input_csv, output_csv, team_stats_csv):
     if "Replay URL" not in df_input.columns:
         df_input['Replay URL'] = "https://replay.pokemonshowdown.com/" + df_input['id'].astype(str)
 
-    # ✅ Ensure we assign unique Team IDs
-    get_team_id = assign_sequential_team_ids(df_input["teams"].apply(lambda x: x.get("p1", [])))
-    df_input["Team"] = df_input["teams"].apply(lambda x: ", ".join(x.get("p1", [])))  # Store team as string
-    df_input["Team ID"] = df_input["teams"].apply(lambda x: get_team_id(x.get("p1", [])))
+    # ✅ Use the player's team based on their slot (p1 or p2), not always p1
+    # This is the key fix that was missing before
+    def get_player_team(row):
+        """Extract the team for the player based on their slot"""
+        player_slot = row["player_slot"]
+        teams = row["teams"]
+        # Return the player's team or an empty list if not found
+        return teams.get(player_slot, [])
+    
+    # Assign unique Team IDs based on the player's actual team
+    get_team_id = assign_sequential_team_ids(df_input.apply(get_player_team, axis=1))
+    
+    # Store team as string using the player's team
+    df_input["Team"] = df_input.apply(lambda row: ", ".join(get_player_team(row)), axis=1)
+    
+    # Assign Team ID using the player's team
+    df_input["Team ID"] = df_input.apply(lambda row: get_team_id(get_player_team(row)), axis=1)
 
     # ✅ Check for missing columns before proceeding
     required_columns = ['Team ID', 'Match Title', 'Match Date', 'Replay URL', 'Team']
